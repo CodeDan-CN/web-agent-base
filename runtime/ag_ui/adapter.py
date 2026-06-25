@@ -1,0 +1,469 @@
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
+
+from runtime.models import ActionDecision, ActionResult, HarnessFeedback
+from runtime.state.types import LoopAction, LoopState
+
+AGUIEmit = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+class AGUIEventAdapter:
+    """
+    AG-UI 事件适配器。
+
+    Attributes:
+        emit_callback (AGUIEmit | None): 事件输出回调。
+    """
+
+    def __init__(self, emit_callback: AGUIEmit | None = None) -> None:
+        """
+        初始化 AG-UI 事件适配器。
+
+        Args:
+            emit_callback (AGUIEmit | None): 事件输出回调。
+        """
+        self.emit_callback = emit_callback
+
+    async def emit(self, event: dict[str, Any]) -> None:
+        """
+        输出事件。
+
+        Args:
+            event (dict[str, Any]): AG-UI 事件。
+        """
+        if self.emit_callback:
+            await self.emit_callback(event)
+
+    def run_started(self, run_id: str, thread_id: str) -> dict[str, Any]:
+        """
+        构建 RUN_STARTED 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        return self._base("RUN_STARTED", run_id, thread_id)
+
+    def state_snapshot(
+        self,
+        run_id: str,
+        thread_id: str,
+        state: LoopState,
+    ) -> dict[str, Any]:
+        """
+        构建 STATE_SNAPSHOT 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            state (LoopState): 当前状态。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("STATE_SNAPSHOT", run_id, thread_id)
+        event["snapshot"] = {
+            "phase": "understanding",
+            "state": state.value,
+            "label": "正在理解请求",
+        }
+        return event
+
+    def step_started(
+        self,
+        run_id: str,
+        thread_id: str,
+        step_index: int,
+    ) -> dict[str, Any]:
+        """
+        构建 STEP_STARTED 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            step_index (int): 步骤序号。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("STEP_STARTED", run_id, thread_id)
+        event["step"] = {"index": step_index, "label": "正在理解请求"}
+        return event
+
+    def planning_next(
+        self,
+        run_id: str,
+        thread_id: str,
+        decision: ActionDecision,
+    ) -> dict[str, Any]:
+        """
+        构建下一步安排事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("STATE_DELTA", run_id, thread_id)
+        event["delta"] = {
+            "phase": "planning_next",
+            "label": self._planning_label(decision),
+        }
+        return event
+
+    def tool_call_start(
+        self,
+        run_id: str,
+        thread_id: str,
+        tool_call_id: str,
+        decision: ActionDecision,
+    ) -> dict[str, Any]:
+        """
+        构建 TOOL_CALL_START 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            tool_call_id (str): Tool Call ID。
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("TOOL_CALL_START", run_id, thread_id)
+        event["toolCallId"] = tool_call_id
+        event["toolName"] = self._tool_name(decision.action)
+        event["label"] = self._tool_label(decision.action)
+        return event
+
+    def tool_call_args(
+        self,
+        run_id: str,
+        thread_id: str,
+        tool_call_id: str,
+        decision: ActionDecision,
+    ) -> dict[str, Any]:
+        """
+        构建 TOOL_CALL_ARGS 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            tool_call_id (str): Tool Call ID。
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("TOOL_CALL_ARGS", run_id, thread_id)
+        event["toolCallId"] = tool_call_id
+        event["args"] = self._summarize_args(decision.action_detail.get("input") or {})
+        return event
+
+    def tool_call_end(
+        self,
+        run_id: str,
+        thread_id: str,
+        tool_call_id: str,
+        result: ActionResult,
+    ) -> dict[str, Any]:
+        """
+        构建 TOOL_CALL_END 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            tool_call_id (str): Tool Call ID。
+            result (ActionResult): Action 结果。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("TOOL_CALL_END", run_id, thread_id)
+        event["toolCallId"] = tool_call_id
+        event["result"] = {
+            "status": result.status,
+            "summary": result.summary,
+            "missingParams": result.missing_params,
+        }
+        return event
+
+    def harness_delta(
+        self,
+        run_id: str,
+        thread_id: str,
+        decision: ActionDecision,
+        feedback: HarnessFeedback | None,
+    ) -> dict[str, Any]:
+        """
+        构建 Harness 后状态变化事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            decision (ActionDecision): Action 决策。
+            feedback (HarnessFeedback | None): Harness 反馈。
+
+        Returns:
+            dict[str, Any]: AG-UI 事件。
+        """
+        event = self._base("STATE_DELTA", run_id, thread_id)
+        event["delta"] = self._feedback_delta(decision, feedback)
+        return event
+
+    def text_message_start(self, run_id: str, thread_id: str, message_id: str) -> dict:
+        """
+        构建 TEXT_MESSAGE_START 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            message_id (str): Message ID。
+
+        Returns:
+            dict: AG-UI 事件。
+        """
+        event = self._base("TEXT_MESSAGE_START", run_id, thread_id)
+        event["messageId"] = message_id
+        event["role"] = "assistant"
+        return event
+
+    def text_message_content(
+        self,
+        run_id: str,
+        thread_id: str,
+        message_id: str,
+        content: str,
+    ) -> dict:
+        """
+        构建 TEXT_MESSAGE_CONTENT 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            message_id (str): Message ID。
+            content (str): 文本内容。
+
+        Returns:
+            dict: AG-UI 事件。
+        """
+        event = self._base("TEXT_MESSAGE_CONTENT", run_id, thread_id)
+        event["messageId"] = message_id
+        event["delta"] = content
+        return event
+
+    def text_message_end(self, run_id: str, thread_id: str, message_id: str) -> dict:
+        """
+        构建 TEXT_MESSAGE_END 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            message_id (str): Message ID。
+
+        Returns:
+            dict: AG-UI 事件。
+        """
+        event = self._base("TEXT_MESSAGE_END", run_id, thread_id)
+        event["messageId"] = message_id
+        return event
+
+    def step_finished(
+        self,
+        run_id: str,
+        thread_id: str,
+        step_index: int,
+        state: LoopState,
+    ) -> dict:
+        """
+        构建 STEP_FINISHED 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            step_index (int): 步骤序号。
+            state (LoopState): 步骤结束状态。
+
+        Returns:
+            dict: AG-UI 事件。
+        """
+        event = self._base("STEP_FINISHED", run_id, thread_id)
+        event["step"] = {"index": step_index, "state": state.value}
+        return event
+
+    def run_finished(self, run_id: str, thread_id: str, state: LoopState) -> dict:
+        """
+        构建 RUN_FINISHED 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            state (LoopState): 最终状态。
+
+        Returns:
+            dict: AG-UI 事件。
+        """
+        event = self._base("RUN_FINISHED", run_id, thread_id)
+        event["state"] = state.value
+        event["label"] = "已完成"
+        return event
+
+    def run_error(self, run_id: str, thread_id: str, message: str) -> dict:
+        """
+        构建 RUN_ERROR 事件。
+
+        Args:
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+            message (str): 错误消息。
+
+        Returns:
+            dict: AG-UI 事件。
+        """
+        event = self._base("RUN_ERROR", run_id, thread_id)
+        event["error"] = {"message": message}
+        event["label"] = "无法继续完成"
+        return event
+
+    def new_message_id(self) -> str:
+        """
+        创建消息 ID。
+
+        Returns:
+            str: 消息 ID。
+        """
+        return uuid4().hex
+
+    def new_tool_call_id(self) -> str:
+        """
+        创建 Tool Call ID。
+
+        Returns:
+            str: Tool Call ID。
+        """
+        return uuid4().hex
+
+    def _base(self, event_type: str, run_id: str, thread_id: str) -> dict[str, Any]:
+        """
+        构建基础事件。
+
+        Args:
+            event_type (str): 事件类型。
+            run_id (str): Run ID。
+            thread_id (str): Thread ID。
+
+        Returns:
+            dict[str, Any]: 基础事件。
+        """
+        return {
+            "type": event_type,
+            "runId": run_id,
+            "threadId": thread_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+    def _planning_label(self, decision: ActionDecision) -> str:
+        """
+        获取下一步安排文案。
+
+        Args:
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            str: 展示文案。
+        """
+        if decision.action == LoopAction.CALL_SKILL:
+            return "我会先整理你提供的文本，再提取出关键要点。"
+        if decision.action == LoopAction.CALL_AGENT:
+            return "我会根据你的目标和约束生成一版推进方案。"
+        if decision.action == LoopAction.ASK_USER:
+            return "我需要先确认缺少的信息，再继续处理。"
+        return "我会根据当前信息直接整理回答。"
+
+    def _tool_name(self, action: LoopAction) -> str:
+        """
+        获取工具名称。
+
+        Args:
+            action (LoopAction): Action。
+
+        Returns:
+            str: 工具名称。
+        """
+        return "content_extract_skill" if action == LoopAction.CALL_SKILL else "planning_worker"
+
+    def _tool_label(self, action: LoopAction) -> str:
+        """
+        获取工具展示文案。
+
+        Args:
+            action (LoopAction): Action。
+
+        Returns:
+            str: 展示文案。
+        """
+        if action == LoopAction.CALL_SKILL:
+            return "正在整理文本"
+        return "正在生成方案"
+
+    def _summarize_args(self, args: dict[str, Any]) -> dict[str, Any]:
+        """
+        脱敏参数摘要。
+
+        Args:
+            args (dict[str, Any]): 原始参数。
+
+        Returns:
+            dict[str, Any]: 参数摘要。
+        """
+        return {
+            key: self._clip(str(value))
+            for key, value in args.items()
+            if key != "session_context"
+        }
+
+    def _feedback_delta(
+        self,
+        decision: ActionDecision,
+        feedback: HarnessFeedback | None,
+    ) -> dict[str, str]:
+        """
+        获取 Harness 可见状态变化。
+
+        Args:
+            decision (ActionDecision): Action 决策。
+            feedback (HarnessFeedback | None): Harness 反馈。
+
+        Returns:
+            dict[str, str]: 状态变化。
+        """
+        if not feedback:
+            return {"phase": "answering", "label": "正在生成最终回答"}
+        if feedback.state == LoopState.MISSING_PARAMS:
+            return {"phase": "need_more_info", "label": "还需要补充信息"}
+        if feedback.state == LoopState.FAILED:
+            return {"phase": "failed", "label": "无法继续完成"}
+        if decision.action == LoopAction.CALL_SKILL:
+            return {"phase": "tool_result_ready", "label": "文本处理已完成，正在组织回答"}
+        return {"phase": "tool_result_ready", "label": "规划分析已完成，正在组织回答"}
+
+    def _clip(self, text: str, limit: int = 160) -> str:
+        """
+        截断展示文本。
+
+        Args:
+            text (str): 原始文本。
+            limit (int): 最大长度。
+
+        Returns:
+            str: 截断文本。
+        """
+        return text if len(text) <= limit else f"{text[:limit]}..."

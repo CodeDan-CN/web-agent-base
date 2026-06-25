@@ -1,0 +1,16 @@
+.env
+.DS_Store
+._*
+.Spotlight-V100/
+.Trashes/
+.fseventsd/
+.AppleDouble/
+.LSOverride
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+logs/
+ui/
+.idea/
