@@ -1,12 +1,11 @@
-from typing import Any
-
 from exception.error_code import BizErrorCode
-from runtime.actions.mock_executors import PlanningMockExecutor
 from runtime.ag_ui.adapter import AGUIEventAdapter
 from runtime.context.assembler import RuntimeContext
+from runtime.context.prompt_safety import remove_event_identifiers
 from runtime.models import ActionDecision, ActionResult
 from runtime.state.types import LoopAction
 from runtime.tools.skill_executor import SkillExecutor
+from runtime.workers.worker_executor import WorkerExecutor
 from utils.llm_client import LLMClient
 
 
@@ -17,7 +16,7 @@ class ActionExecutor:
     Attributes:
         llm_client (LLMClient): 模型调用客户端。
         skill_executor (SkillExecutor): Skill 执行器。
-        planning_executor (PlanningMockExecutor): 规划分析 worker executor。
+        worker_executor (WorkerExecutor): Worker Agent 执行器。
     """
 
     def __init__(self, llm_client: LLMClient) -> None:
@@ -29,7 +28,7 @@ class ActionExecutor:
         """
         self.llm_client = llm_client
         self.skill_executor = SkillExecutor()
-        self.planning_executor = PlanningMockExecutor()
+        self.worker_executor = WorkerExecutor()
 
     async def execute(
         self,
@@ -181,7 +180,7 @@ class ActionExecutor:
         decision: ActionDecision,
     ) -> ActionResult:
         """
-        调用 mock agent executor。
+        调用 Worker Agent executor。
 
         Args:
             context (RuntimeContext): Runtime 上下文。
@@ -190,31 +189,7 @@ class ActionExecutor:
         Returns:
             ActionResult: worker executor 结果。
         """
-        payload = self._build_executor_payload(context, decision)
-        return await self.planning_executor.execute(payload)
-
-    def _build_executor_payload(
-        self,
-        context: RuntimeContext,
-        decision: ActionDecision,
-    ) -> dict[str, Any]:
-        """
-        构建 worker executor 输入。
-
-        Args:
-            context (RuntimeContext): Runtime 上下文。
-            decision (ActionDecision): Action 决策。
-
-        Returns:
-            dict[str, Any]: worker executor 输入。
-        """
-        action_input = decision.action_detail.get("input") or {}
-        if not isinstance(action_input, dict):
-            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception("Action input 必须是对象")
-        payload = dict(action_input)
-        payload["user_message"] = context.request.message
-        payload["session_context"] = context.session_context
-        return payload
+        return await self.worker_executor.execute(context, decision)
 
     def _build_answer_prompt(
         self,
@@ -236,13 +211,14 @@ class ActionExecutor:
             for name, content in context.agent_definition.files.items()
         )
         previous_result = (
-            context.previous_action_result.to_dict()
+            remove_event_identifiers(context.previous_action_result.to_dict())
             if context.previous_action_result
             else None
         )
         return (
             f"Agent 文件：\n{files}\n\n"
             f"用户请求：{context.request.message}\n\n"
+            f"请求元数据：{remove_event_identifiers(context.request.metadata)}\n\n"
             f"会话上下文：{context.session_context}\n\n"
             f"上一轮执行结果：{previous_result}\n\n"
             f"回答要求：{decision.action_detail.get('answer_instruction', '')}"

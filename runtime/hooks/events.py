@@ -56,3 +56,23 @@ class ToolCallCompletedEvent:
     input_payload: dict[str, Any]
     output_payload: dict[str, Any]
     status: str
+
+
+@dataclass
+class EventSummaryRequestedEvent:
+    """
+    事件摘要请求事件。
+
+    Attributes:
+        event_id (str): 事件 ID。
+        user_id (str): 用户 ID。
+        session_id (str): 会话 ID。
+        trigger_agent_id (str): 触发摘要的 Agent ID。
+        final_state (str): 触发时最终状态。
+    """
+
+    event_id: str
+    user_id: str
+    session_id: str
+    trigger_agent_id: str
+    final_state: str

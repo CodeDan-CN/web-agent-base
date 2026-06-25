@@ -1,10 +1,10 @@
 {
-  "skill_id": "amap_weather",
-  "name": "高德天气查询",
-  "description": "调用高德天气查询接口，根据 adcode 查询实时天气或天气预报。",
+  "skill_id": "amap_district_search",
+  "name": "高德行政区域查询",
+  "description": "调用高德行政区域查询接口，获取行政区编码和层级信息。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/weather/weatherInfo",
+    "endpoint": "https://restapi.amap.com/v3/config/district",
     "method": "GET",
     "auth": {
       "type": "query",
@@ -13,16 +13,17 @@
     },
     "timeout_ms": 10000,
     "response_mapping": {
-      "kind": "amap_weather"
+      "kind": "amap_generic"
     }
   },
   "input_schema": {
     "type": "object",
     "properties": {
-      "city": {"type": "string"},
+      "keywords": {"type": "string"},
+      "subdistrict": {"type": "string"},
       "extensions": {"type": "string", "enum": ["base", "all"]}
     },
-    "required": ["city"],
+    "required": ["keywords"],
     "additionalProperties": false
   },
   "output_schema": {

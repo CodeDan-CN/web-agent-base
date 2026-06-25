@@ -73,10 +73,11 @@ class ApiSkillAdapter(BaseSkillAdapter):
         执行 HTTP API Skill。
         """
         api_payload = dict(payload)
+        settings = get_settings()
         self._apply_auth(skill, api_payload)
         timeout_ms = int(
             skill.executor.get("timeout_ms")
-            or get_settings().skill_api_timeout_ms
+            or settings.skill_api_timeout_ms
         )
         async with httpx.AsyncClient(timeout=timeout_ms / 1000) as client:
             response = await self._request(client, skill, api_payload)
@@ -131,8 +132,10 @@ class ApiSkillAdapter(BaseSkillAdapter):
             return self._map_amap_geocode(response)
         if kind == "amap_weather":
             return self._map_amap_weather(response)
-        if kind == "amap_direction_driving":
-            return self._map_amap_direction_driving(response)
+        if kind == "amap_route_driving":
+            return self._map_amap_route_driving(response)
+        if kind == "amap_generic":
+            return self._map_amap_generic(response)
         return {
             "status": "success",
             "data": response,
@@ -232,7 +235,19 @@ class ApiSkillAdapter(BaseSkillAdapter):
             "error": None,
         }
 
-    def _map_amap_direction_driving(self, response: dict[str, Any]) -> dict[str, Any]:
+    def _map_amap_generic(self, response: dict[str, Any]) -> dict[str, Any]:
+        """
+        映射高德通用接口响应。
+        """
+        failed = self._amap_failed(response)
+        if failed:
+            return failed
+        return self._success(
+            {"raw": response},
+            str(response.get("info") or "高德接口调用完成"),
+        )
+
+    def _map_amap_route_driving(self, response: dict[str, Any]) -> dict[str, Any]:
         """
         映射高德驾车路径规划响应。
         """
@@ -350,7 +365,7 @@ class ChainSkillAdapter(BaseSkillAdapter):
         if destination.status != "success":
             return self._chain_failed("终点地址解析失败", destination)
         route = await executor.execute_by_skill_id(
-            "amap_direction_driving",
+            "amap_route_driving",
             {
                 "origin": str(origin.data.get("location") or ""),
                 "destination": str(destination.data.get("location") or ""),
@@ -394,7 +409,7 @@ class ChainSkillAdapter(BaseSkillAdapter):
                 "steps": [
                     {"skill_id": "amap_geocode", "summary": origin.summary},
                     {"skill_id": "amap_geocode", "summary": destination.summary},
-                    {"skill_id": "amap_direction_driving", "summary": route.summary},
+                    {"skill_id": "amap_route_driving", "summary": route.summary},
                     {"skill_id": "amap_weather", "summary": weather.summary},
                     {"skill_id": "travel_briefing_formatter", "summary": briefing.summary},
                 ],

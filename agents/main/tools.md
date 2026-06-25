@@ -11,32 +11,22 @@
 - `action_detail.input` 必须符合该 Skill 的输入结构。
 - 信息不足时不要编造参数，先选择 `ask_user` 或等待用户补充。
 
-第二阶段预置 Skill：
+当前主 Agent 预置 Skill：
 
 - `content_extract`：文本提取、摘要、要点整理。
-- `amap_geocode`：高德地址解析。
-- `amap_weather`：高德天气查询。
-- `amap_direction_driving`：高德驾车路径规划。
-- `travel_briefing_formatter`：出行建议格式化。
-- `amap_route_weather_plan`：地址解析、路线、天气和出行建议固定链路。
 
-## planning_worker
+## Worker 调用
 
-类型：mock worker executor
+可用 Worker 由 Runtime 扫描 `agents/workers/` 目录后注入到 LoopDecider。
 
-适用：
+调用规则：
 
-- 学习路线
-- 实施方案
-- 任务拆解
-- 推进计划
+- 需要领域 Worker 处理时，选择 `call_agent`。
+- `action_detail.worker_id` 必须使用可用 Worker 目录中的真实 `worker_id`。
+- `action_detail.task` 是简短任务标题。
+- `action_detail.handoff_context` 是给 Worker 的自然语言交接上下文。
+- `action_detail.handoff.reason` 说明为什么交给该 Worker。
 
-输入建议：
+当前预置 Worker：
 
-```json
-{
-  "goal": "用户目标",
-  "background": "背景信息",
-  "constraints": {}
-}
-```
+- `amap_worker`：处理高德地图、地址、天气、路线规划和出行建议。

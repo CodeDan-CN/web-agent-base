@@ -383,7 +383,7 @@ class AGUIEventAdapter:
         if decision.action == LoopAction.CALL_SKILL:
             return self._skill_planning_label(self._tool_name(decision))
         if decision.action == LoopAction.CALL_AGENT:
-            return "我会根据你的目标和约束生成一版推进方案。"
+            return self._worker_planning_label(self._tool_name(decision))
         if decision.action == LoopAction.ASK_USER:
             return "我需要先确认缺少的信息，再继续处理。"
         return "我会根据当前信息直接整理回答。"
@@ -405,7 +405,11 @@ class AGUIEventAdapter:
                 or "unknown_skill"
             )
             return "content_extract" if raw_name == "content_extract_skill" else raw_name
-        return str(decision.action_detail.get("name") or "planning_worker")
+        return str(
+            decision.action_detail.get("worker_id")
+            or decision.action_detail.get("name")
+            or "unknown_worker"
+        )
 
     def _tool_label(self, decision: ActionDecision) -> str:
         """
@@ -419,7 +423,7 @@ class AGUIEventAdapter:
         """
         if decision.action == LoopAction.CALL_SKILL:
             return self._skill_tool_label(self._tool_name(decision))
-        return "正在生成方案"
+        return self._worker_tool_label(self._tool_name(decision))
 
     def _skill_planning_label(self, skill_id: str) -> str:
         """
@@ -429,7 +433,7 @@ class AGUIEventAdapter:
             "content_extract": "我会先整理你提供的文本，再提取出关键内容。",
             "amap_geocode": "我会先解析地址，确认后续查询需要的位置编码。",
             "amap_weather": "我会查询对应区域的天气，再整理成可读结果。",
-            "amap_direction_driving": "我会查询起终点之间的驾车路线。",
+            "amap_route_driving": "我会查询起终点之间的驾车路线。",
             "amap_route_weather_plan": "我会把地址解析、路线查询和天气查询串起来处理。",
             "travel_briefing_formatter": "我会把路线和天气结果整理成出行建议。",
         }
@@ -443,11 +447,29 @@ class AGUIEventAdapter:
             "content_extract": "正在整理文本",
             "amap_geocode": "正在解析地址",
             "amap_weather": "正在查询天气",
-            "amap_direction_driving": "正在查询路线",
+            "amap_route_driving": "正在查询路线",
             "amap_route_weather_plan": "正在组合路线和天气",
             "travel_briefing_formatter": "正在生成出行建议",
         }
         return labels.get(skill_id, "正在调用能力")
+
+    def _worker_planning_label(self, worker_id: str) -> str:
+        """
+        获取 Worker 下一步安排文案。
+        """
+        labels = {
+            "amap_worker": "我会把地图、路线或天气相关部分交给高德 Worker 处理。",
+        }
+        return labels.get(worker_id, "我会调用合适的 Worker 处理这一步。")
+
+    def _worker_tool_label(self, worker_id: str) -> str:
+        """
+        获取 Worker 执行中展示文案。
+        """
+        labels = {
+            "amap_worker": "正在调用高德 Worker",
+        }
+        return labels.get(worker_id, "正在调用 Worker")
 
     def _summarize_args(self, args: dict[str, Any]) -> dict[str, Any]:
         """
@@ -488,7 +510,7 @@ class AGUIEventAdapter:
             return {"phase": "failed", "label": "无法继续完成"}
         if decision.action == LoopAction.CALL_SKILL:
             return {"phase": "tool_result_ready", "label": "能力调用已完成，正在组织回答"}
-        return {"phase": "tool_result_ready", "label": "规划分析已完成，正在组织回答"}
+        return {"phase": "tool_result_ready", "label": "Worker 结果已返回，正在组织回答"}
 
     def _clip(self, text: str, limit: int = 160) -> str:
         """

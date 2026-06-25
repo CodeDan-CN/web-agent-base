@@ -1,4 +1,4 @@
-# amap_direction_driving
+# amap_route_driving
 
 ## 用途
 

@@ -21,6 +21,9 @@ class Settings:
         max_loop_steps (int): 单次 Agent Run 最大 Loop 步数。
         cors_origins (list[str]): 允许跨域访问的来源。
         skill_api_timeout_ms (int): API Skill 超时时间。
+        event_summary_direct_max_turns (int): 事件摘要直接汇总最大轮数。
+        event_summary_direct_max_chars (int): 事件摘要直接汇总最大字符数。
+        event_summary_target_chars (int): 事件摘要模型总结目标字符数。
     """
 
     database_url: str
@@ -33,6 +36,9 @@ class Settings:
     max_loop_steps: int
     cors_origins: list[str]
     skill_api_timeout_ms: int
+    event_summary_direct_max_turns: int
+    event_summary_direct_max_chars: int
+    event_summary_target_chars: int
 
 
 def _to_tortoise_database_url(database_url: str) -> str:
@@ -82,4 +88,13 @@ def get_settings() -> Settings:
             if item.strip()
         ],
         skill_api_timeout_ms=int(os.getenv("SKILL_API_TIMEOUT_MS", "10000")),
+        event_summary_direct_max_turns=int(
+            os.getenv("EVENT_SUMMARY_DIRECT_MAX_TURNS", "6")
+        ),
+        event_summary_direct_max_chars=int(
+            os.getenv("EVENT_SUMMARY_DIRECT_MAX_CHARS", "1200")
+        ),
+        event_summary_target_chars=int(
+            os.getenv("EVENT_SUMMARY_TARGET_CHARS", "100")
+        ),
     )

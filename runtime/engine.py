@@ -1,3 +1,4 @@
+import asyncio
 from uuid import uuid4
 
 from exception.error_code import BizErrorCode
@@ -5,8 +6,14 @@ from runtime.actions.executor import ActionExecutor
 from runtime.ag_ui.adapter import AGUIEventAdapter
 from runtime.agents.loader import AgentLoader
 from runtime.context.assembler import ContextAssembler
+from runtime.context.event_preloader import EventContextPreloader
+from runtime.events.manager import EventManager
 from runtime.harness.evaluator import LLMHarnessEvaluator
-from runtime.hooks.events import LoopStepCompletedEvent, ToolCallCompletedEvent
+from runtime.hooks.events import (
+    EventSummaryRequestedEvent,
+    LoopStepCompletedEvent,
+    ToolCallCompletedEvent,
+)
 from runtime.hooks.runtime_hook import RuntimeHook
 from runtime.loop.decider import LLMLoopDecider
 from runtime.models import (
@@ -35,7 +42,9 @@ class RuntimeEngine:
         action_executor (ActionExecutor): Action 执行器。
         harness (LLMHarnessEvaluator): Harness 评估器。
         state_manager (StateManager): 状态管理器。
+        event_manager (EventManager): 事件管理器。
         runtime_hook (RuntimeHook): Runtime Hook。
+        event_preloader (EventContextPreloader): Loop 前事件上下文预加载器。
         max_loop_steps (int): 最大 Loop 步数。
     """
 
@@ -51,7 +60,9 @@ class RuntimeEngine:
         self.action_executor = ActionExecutor(self.llm_client)
         self.harness = LLMHarnessEvaluator(self.llm_client)
         self.state_manager = StateManager()
+        self.event_manager = EventManager()
         self.runtime_hook = RuntimeHook()
+        self.event_preloader = EventContextPreloader(self.llm_client)
         self.max_loop_steps = settings.max_loop_steps
 
     async def run(
@@ -69,10 +80,25 @@ class RuntimeEngine:
         Returns:
             RuntimeResult: Runtime 运行结果。
         """
-        agent_definition = self.agent_loader.load_main_agent()
+        agent_definition = self.agent_loader.load_agent(request.agent_id)
         session_state = await self.state_manager.load_or_create_session(request)
+        request.session_id = session_state.session_id
+        explicit_event_id = bool(str(request.metadata.get("event_id") or "").strip())
+        event = await self.event_manager.resolve_event(request)
+        request.metadata["event_id"] = event.event_id
         current_state = self.state_manager.state_for_new_run(session_state)
         run = await self._create_agent_run(request, session_state.session_id, current_state)
+        await self.event_manager.link_run(event, request, run.id)
+        event_prompt_context = await self.event_preloader.preload(
+            user_id=request.user_id,
+            session_id=session_state.session_id,
+            agent_id=request.agent_id,
+            event_id=event.event_id,
+            user_message=request.message,
+            explicit_event_id=explicit_event_id,
+            allow_related_lookup=agent_definition.kind == "main",
+            exclude_run_id=run.id,
+        )
         await self._emit_agui(
             agui_adapter,
             agui_adapter.run_started(run.id, session_state.session_id)
@@ -92,6 +118,7 @@ class RuntimeEngine:
         final_answer: str | None = None
         final_question: str | None = None
         final_state = current_state
+        action_history: list[dict] = []
         try:
             for step_index in range(1, self.max_loop_steps + 1):
                 await self._emit_agui(
@@ -108,6 +135,8 @@ class RuntimeEngine:
                     harness_feedback=(
                         harness_feedback.to_dict() if harness_feedback else None
                     ),
+                    action_history=action_history,
+                    event_prompt_context=event_prompt_context,
                 )
                 state_before = final_state
                 decision = await self.loop_decider.decide(state_before, context)
@@ -159,6 +188,16 @@ class RuntimeEngine:
                         else None,
                     )
                 next_state = self._resolve_next_state(decision, feedback)
+                action_history.append(
+                    self._build_action_history_item(
+                        step_index,
+                        state_before,
+                        decision,
+                        result,
+                        feedback,
+                        next_state,
+                    )
+                )
                 await self._emit_text_if_needed(
                     agui_adapter,
                     run.id,
@@ -235,6 +274,13 @@ class RuntimeEngine:
                 user_message=request.message,
             )
             await self._finish_agent_run(run, final_state, final_answer, None)
+            if request.agent_id == event.root_agent_id:
+                event = await self.event_manager.update_status(event, final_state)
+                self._request_event_summary_if_needed(
+                    event.event_id,
+                    request,
+                    final_state,
+                )
             await self._emit_agui(
                 agui_adapter,
                 agui_adapter.run_finished(run.id, session_state.session_id, final_state)
@@ -251,6 +297,13 @@ class RuntimeEngine:
             )
         except Exception as exc:
             await self._finish_agent_run(run, LoopState.FAILED, None, str(exc))
+            if request.agent_id == event.root_agent_id:
+                event = await self.event_manager.update_status(event, LoopState.FAILED)
+                self._request_event_summary_if_needed(
+                    event.event_id,
+                    request,
+                    LoopState.FAILED,
+                )
             await self._emit_agui(
                 agui_adapter,
                 agui_adapter.run_error(run.id, session_state.session_id, "服务暂时无法完成请求")
@@ -258,6 +311,34 @@ class RuntimeEngine:
                 else None,
             )
             raise
+
+    def _request_event_summary_if_needed(
+        self,
+        event_id: str,
+        request: RuntimeRequest,
+        final_state: LoopState,
+    ) -> None:
+        """
+        必要时触发事件摘要 Hook。
+
+        Args:
+            event_id (str): 事件 ID。
+            request (RuntimeRequest): Runtime 请求。
+            final_state (LoopState): 最终状态。
+        """
+        if final_state not in {LoopState.COMPLETED, LoopState.FAILED}:
+            return
+        asyncio.create_task(
+            self.runtime_hook.on_event_summary_requested(
+                EventSummaryRequestedEvent(
+                    event_id=event_id,
+                    user_id=request.user_id,
+                    session_id=request.session_id or "",
+                    trigger_agent_id=request.agent_id,
+                    final_state=final_state.value,
+                )
+            )
+        )
 
     async def _create_agent_run(
         self,
@@ -346,6 +427,39 @@ class RuntimeEngine:
         if feedback:
             return feedback.state
         return self.state_manager.next_state_for_direct_action(decision.action)
+
+    def _build_action_history_item(
+        self,
+        step_index: int,
+        state_before: LoopState,
+        decision: ActionDecision,
+        result: ActionResult,
+        feedback: HarnessFeedback | None,
+        state_after: LoopState,
+    ) -> dict:
+        """
+        构建当前 run 内给下一步 LoopDecider 使用的动作历史。
+
+        Args:
+            step_index (int): 步骤序号。
+            state_before (LoopState): 执行前状态。
+            decision (ActionDecision): Action 决策。
+            result (ActionResult): Action 结果。
+            feedback (HarnessFeedback | None): Harness 反馈。
+            state_after (LoopState): 执行后状态。
+
+        Returns:
+            dict: 动作历史项。
+        """
+        return {
+            "step_index": step_index,
+            "state_before": state_before.value,
+            "action": decision.action.value,
+            "action_detail": decision.action_detail,
+            "execution_result": result.to_dict(),
+            "harness_feedback": feedback.to_dict() if feedback else None,
+            "state_after": state_after.value,
+        }
 
     async def _emit_loop_step(
         self,
@@ -513,8 +627,11 @@ class RuntimeEngine:
         """
         if decision.action not in {LoopAction.CALL_SKILL, LoopAction.CALL_AGENT}:
             return
-        action_input = decision.action_detail.get("input") or {}
-        input_payload = dict(action_input) if isinstance(action_input, dict) else {}
+        if decision.action == LoopAction.CALL_SKILL:
+            action_input = decision.action_detail.get("input") or {}
+            input_payload = dict(action_input) if isinstance(action_input, dict) else {}
+        else:
+            input_payload = dict(decision.action_detail)
         input_payload["user_message"] = user_message
         input_payload["session_context"] = session_context
         tool_name = self._tool_name(decision)
@@ -548,4 +665,8 @@ class RuntimeEngine:
                 or "unknown_skill"
             )
             return "content_extract" if raw_name == "content_extract_skill" else raw_name
-        return str(decision.action_detail.get("name") or "planning_worker")
+        return str(
+            decision.action_detail.get("worker_id")
+            or decision.action_detail.get("name")
+            or "unknown_worker"
+        )

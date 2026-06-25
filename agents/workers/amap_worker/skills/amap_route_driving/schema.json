@@ -1,5 +1,5 @@
 {
-  "skill_id": "amap_direction_driving",
+  "skill_id": "amap_route_driving",
   "name": "高德驾车路径规划",
   "description": "调用高德驾车路径规划接口，根据起终点经纬度查询路线。",
   "executor": {
@@ -13,7 +13,7 @@
     },
     "timeout_ms": 10000,
     "response_mapping": {
-      "kind": "amap_direction_driving"
+      "kind": "amap_route_driving"
     }
   },
   "input_schema": {

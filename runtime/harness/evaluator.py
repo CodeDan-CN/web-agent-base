@@ -2,6 +2,7 @@ import json
 
 from exception.error_code import BizErrorCode
 from runtime.context.assembler import RuntimeContext
+from runtime.context.prompt_safety import remove_event_identifiers
 from runtime.models import ActionDecision, ActionResult, HarnessFeedback
 from runtime.state.types import LoopAction
 from runtime.state.types import LoopState
@@ -83,6 +84,7 @@ class LLMHarnessEvaluator:
         """
         harness_instruction = context.agent_definition.files.get("harness.md", "")
         skill = self._skill_payload(context, decision)
+        worker = self._worker_payload(context, decision)
         payload = {
             "user_request": {
                 "message": context.request.message,
@@ -92,9 +94,10 @@ class LLMHarnessEvaluator:
             },
             "state_before": context.session_state.state,
             "action": decision.action.value,
-            "action_detail": decision.action_detail,
+            "action_detail": remove_event_identifiers(decision.action_detail),
             "skill": skill,
-            "execution_result": result.to_dict(),
+            "worker": worker,
+            "execution_result": remove_event_identifiers(result.to_dict()),
             "pending_action": context.session_context.get("pending_action"),
             "missing_params": context.session_context.get("missing_params"),
             "harness_instruction": harness_instruction,
@@ -133,6 +136,33 @@ class LLMHarnessEvaluator:
         skill_id = "content_extract" if raw_name == "content_extract_skill" else raw_name
         skill = context.agent_definition.skill_registry.get(skill_id)
         return skill.to_catalog_item() if skill else None
+
+    def _worker_payload(
+        self,
+        context: RuntimeContext,
+        decision: ActionDecision,
+    ) -> dict | None:
+        """
+        构建 Harness 可参考的 Worker 摘要。
+
+        Args:
+            context (RuntimeContext): Runtime 上下文。
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            dict | None: Worker 摘要。
+        """
+        if decision.action != LoopAction.CALL_AGENT:
+            return None
+        worker_id = str(
+            decision.action_detail.get("worker_id")
+            or decision.action_detail.get("name")
+            or ""
+        )
+        for worker in context.worker_catalog:
+            if worker.get("worker_id") == worker_id:
+                return worker
+        return {"worker_id": worker_id}
 
     def _parse_feedback(self, payload: dict) -> HarnessFeedback:
         """

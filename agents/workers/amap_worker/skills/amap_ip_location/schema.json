@@ -1,0 +1,39 @@
+{
+  "skill_id": "amap_ip_location",
+  "name": "高德 IP 定位",
+  "description": "调用高德 IP 定位接口，根据 IPv4 地址查询大致城市位置。",
+  "executor": {
+    "type": "api",
+    "endpoint": "https://restapi.amap.com/v3/ip",
+    "method": "GET",
+    "auth": {
+      "type": "query",
+      "param": "key",
+      "env": "AMAP_WEB_SERVICE_KEY"
+    },
+    "timeout_ms": 10000,
+    "response_mapping": {
+      "kind": "amap_generic"
+    }
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "ip": {"type": "string"}
+    },
+    "required": ["ip"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "enum": ["success", "partial_success", "missing_params", "failed"]},
+      "data": {"type": "object"},
+      "summary": {"type": "string"},
+      "missing_params": {"type": "array", "items": {"type": "string"}},
+      "error": {"type": ["string", "null"]}
+    },
+    "required": ["status", "data", "summary", "missing_params", "error"],
+    "additionalProperties": false
+  }
+}

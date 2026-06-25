@@ -39,7 +39,6 @@
 | 语言 | Python |
 | Web 框架 | FastAPI |
 | 数据库 | PostgreSQL |
-| 向量能力 | pgvector |
 | ORM | Tortoise ORM |
 | 运行环境 | conda + requirements.txt |
 | 服务启动 | uvicorn |
@@ -73,7 +72,7 @@ pip install -r requirements.txt
 uv run uvicorn app:app --host 0.0.0.0 --port 8003 --reload
 ```
 
-本地 PostgreSQL + pgvector 可以通过部署目录中的 compose 文件启动：
+本地 PostgreSQL 可以通过部署目录中的 compose 文件启动：
 
 ```bash
 docker compose -f deployment/docker-compose.yaml up -d postgres
@@ -317,8 +316,6 @@ fastapi~=0.115
 ### ORM 与 SQL
 
 常规 CRUD 使用 Tortoise ORM。
-
-pgvector 相似度检索可以在 repository 或 mapping 层使用 raw SQL 封装。
 
 不要在业务流程里散落 raw SQL。
 

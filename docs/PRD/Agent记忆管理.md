@@ -31,4 +31,4 @@
 
 - 固定一个context engineer大小
 - 摘要压缩、检索片段限制
-- embedding rag辅助当前会话摘要详细
+- RAG 辅助当前会话摘要详细

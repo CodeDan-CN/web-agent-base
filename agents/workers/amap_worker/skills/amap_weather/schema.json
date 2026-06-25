@@ -1,0 +1,47 @@
+{
+  "skill_id": "amap_weather",
+  "name": "高德天气查询",
+  "description": "调用高德天气查询接口，根据 adcode 查询实时天气或天气预报。",
+  "executor": {
+    "type": "api",
+    "endpoint": "https://restapi.amap.com/v3/weather/weatherInfo",
+    "method": "GET",
+    "auth": {
+      "type": "query",
+      "param": "key",
+      "env": "AMAP_WEB_SERVICE_KEY"
+    },
+    "timeout_ms": 10000,
+    "response_mapping": {
+      "kind": "amap_weather"
+    }
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "city": {
+        "type": "string",
+        "description": "必须是 adcode、城市名或区县名。不要传 POI 名称、街道或完整地址；如果用户只给了 POI、街道或详细地址，先调用 amap_geocode，并使用返回的 adcode。"
+      },
+      "extensions": {
+        "type": "string",
+        "enum": ["base", "all"],
+        "description": "base 查询实时天气，all 查询天气预报。"
+      }
+    },
+    "required": ["city"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "enum": ["success", "partial_success", "missing_params", "failed"]},
+      "data": {"type": "object"},
+      "summary": {"type": "string"},
+      "missing_params": {"type": "array", "items": {"type": "string"}},
+      "error": {"type": ["string", "null"]}
+    },
+    "required": ["status", "data", "summary", "missing_params", "error"],
+    "additionalProperties": false
+  }
+}
