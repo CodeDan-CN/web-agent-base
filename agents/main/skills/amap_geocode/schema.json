@@ -1,0 +1,40 @@
+{
+  "skill_id": "amap_geocode",
+  "name": "高德地址解析",
+  "description": "调用高德地理编码接口，将地址转换为经纬度、adcode 和 citycode。",
+  "executor": {
+    "type": "api",
+    "endpoint": "https://restapi.amap.com/v3/geocode/geo",
+    "method": "GET",
+    "auth": {
+      "type": "query",
+      "param": "key",
+      "env": "AMAP_WEB_SERVICE_KEY"
+    },
+    "timeout_ms": 10000,
+    "response_mapping": {
+      "kind": "amap_geocode"
+    }
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "address": {"type": "string"},
+      "city": {"type": "string"}
+    },
+    "required": ["address"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "enum": ["success", "partial_success", "missing_params", "failed"]},
+      "data": {"type": "object"},
+      "summary": {"type": "string"},
+      "missing_params": {"type": "array", "items": {"type": "string"}},
+      "error": {"type": ["string", "null"]}
+    },
+    "required": ["status", "data", "summary", "missing_params", "error"],
+    "additionalProperties": false
+  }
+}

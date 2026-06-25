@@ -28,8 +28,8 @@ class LoopAction(StrEnum):
 
     Attributes:
         ANSWER_USER: 回答用户。
-        CALL_SKILL: 调用 mock skill executor。
-        CALL_AGENT: 调用 mock agent executor。
+        CALL_SKILL: 调用 Skill executor。
+        CALL_AGENT: 调用 worker executor。
         ASK_USER: 追问用户。
     """
 

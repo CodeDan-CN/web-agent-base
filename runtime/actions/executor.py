@@ -1,11 +1,12 @@
 from typing import Any
 
 from exception.error_code import BizErrorCode
-from runtime.actions.mock_executors import ContentExtractMockExecutor, PlanningMockExecutor
+from runtime.actions.mock_executors import PlanningMockExecutor
 from runtime.ag_ui.adapter import AGUIEventAdapter
 from runtime.context.assembler import RuntimeContext
 from runtime.models import ActionDecision, ActionResult
 from runtime.state.types import LoopAction
+from runtime.tools.skill_executor import SkillExecutor
 from utils.llm_client import LLMClient
 
 
@@ -15,8 +16,8 @@ class ActionExecutor:
 
     Attributes:
         llm_client (LLMClient): 模型调用客户端。
-        content_executor (ContentExtractMockExecutor): 文本提取 mock executor。
-        planning_executor (PlanningMockExecutor): 规划分析 mock executor。
+        skill_executor (SkillExecutor): Skill 执行器。
+        planning_executor (PlanningMockExecutor): 规划分析 worker executor。
     """
 
     def __init__(self, llm_client: LLMClient) -> None:
@@ -27,7 +28,7 @@ class ActionExecutor:
             llm_client (LLMClient): 模型调用客户端。
         """
         self.llm_client = llm_client
-        self.content_executor = ContentExtractMockExecutor()
+        self.skill_executor = SkillExecutor()
         self.planning_executor = PlanningMockExecutor()
 
     async def execute(
@@ -163,17 +164,16 @@ class ActionExecutor:
         decision: ActionDecision,
     ) -> ActionResult:
         """
-        调用 mock skill executor。
+        调用 Skill executor。
 
         Args:
             context (RuntimeContext): Runtime 上下文。
             decision (ActionDecision): Action 决策。
 
         Returns:
-            ActionResult: mock executor 结果。
+            ActionResult: Skill 执行结果。
         """
-        payload = self._build_executor_payload(context, decision)
-        return await self.content_executor.execute(payload)
+        return await self.skill_executor.execute(context, decision)
 
     async def _call_agent(
         self,
@@ -188,7 +188,7 @@ class ActionExecutor:
             decision (ActionDecision): Action 决策。
 
         Returns:
-            ActionResult: mock executor 结果。
+            ActionResult: worker executor 结果。
         """
         payload = self._build_executor_payload(context, decision)
         return await self.planning_executor.execute(payload)
@@ -199,14 +199,14 @@ class ActionExecutor:
         decision: ActionDecision,
     ) -> dict[str, Any]:
         """
-        构建 mock executor 输入。
+        构建 worker executor 输入。
 
         Args:
             context (RuntimeContext): Runtime 上下文。
             decision (ActionDecision): Action 决策。
 
         Returns:
-            dict[str, Any]: mock executor 输入。
+            dict[str, Any]: worker executor 输入。
         """
         action_input = decision.action_detail.get("input") or {}
         if not isinstance(action_input, dict):

@@ -35,14 +35,14 @@ class LoopStepCompletedEvent:
 @dataclass
 class ToolCallCompletedEvent:
     """
-    mock executor 调用完成事件。
+    工具调用完成事件。
 
     Attributes:
         tool_call_id (str): 调用 ID。
         run_id (str): 运行 ID。
         session_id (str): 会话 ID。
         action (str): Action。
-        tool_name (str): mock executor 名称。
+        tool_name (str): 工具名称。
         input_payload (dict[str, Any]): 输入。
         output_payload (dict[str, Any]): 输出。
         status (str): 状态。

@@ -3,6 +3,7 @@ import json
 from exception.error_code import BizErrorCode
 from runtime.context.assembler import RuntimeContext
 from runtime.models import ActionDecision, ActionResult, HarnessFeedback
+from runtime.state.types import LoopAction
 from runtime.state.types import LoopState
 from utils.json_utils import parse_json_object
 from utils.llm_client import LLMClient
@@ -32,7 +33,7 @@ class LLMHarnessEvaluator:
         result: ActionResult,
     ) -> HarnessFeedback:
         """
-        评估 mock executor 结果。
+        评估 Skill 或 worker 结果。
 
         Args:
             context (RuntimeContext): Runtime 上下文。
@@ -81,6 +82,7 @@ class LLMHarnessEvaluator:
             str: 用户提示词。
         """
         harness_instruction = context.agent_definition.files.get("harness.md", "")
+        skill = self._skill_payload(context, decision)
         payload = {
             "user_request": {
                 "message": context.request.message,
@@ -91,6 +93,7 @@ class LLMHarnessEvaluator:
             "state_before": context.session_state.state,
             "action": decision.action.value,
             "action_detail": decision.action_detail,
+            "skill": skill,
             "execution_result": result.to_dict(),
             "pending_action": context.session_context.get("pending_action"),
             "missing_params": context.session_context.get("missing_params"),
@@ -104,6 +107,32 @@ class LLMHarnessEvaluator:
             },
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    def _skill_payload(
+        self,
+        context: RuntimeContext,
+        decision: ActionDecision,
+    ) -> dict | None:
+        """
+        构建 Harness 可参考的 Skill 摘要。
+
+        Args:
+            context (RuntimeContext): Runtime 上下文。
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            dict | None: Skill 摘要。
+        """
+        if decision.action != LoopAction.CALL_SKILL:
+            return None
+        raw_name = str(
+            decision.action_detail.get("skill_id")
+            or decision.action_detail.get("name")
+            or ""
+        )
+        skill_id = "content_extract" if raw_name == "content_extract_skill" else raw_name
+        skill = context.agent_definition.skill_registry.get(skill_id)
+        return skill.to_catalog_item() if skill else None
 
     def _parse_feedback(self, payload: dict) -> HarnessFeedback:
         """

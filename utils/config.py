@@ -20,6 +20,7 @@ class Settings:
         model_disable_reasoning (bool): 是否关闭模型推理输出。
         max_loop_steps (int): 单次 Agent Run 最大 Loop 步数。
         cors_origins (list[str]): 允许跨域访问的来源。
+        skill_api_timeout_ms (int): API Skill 超时时间。
     """
 
     database_url: str
@@ -31,6 +32,7 @@ class Settings:
     model_disable_reasoning: bool
     max_loop_steps: int
     cors_origins: list[str]
+    skill_api_timeout_ms: int
 
 
 def _to_tortoise_database_url(database_url: str) -> str:
@@ -79,4 +81,5 @@ def get_settings() -> Settings:
             ).split(",")
             if item.strip()
         ],
+        skill_api_timeout_ms=int(os.getenv("SKILL_API_TIMEOUT_MS", "10000")),
     )

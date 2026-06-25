@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class RuntimeHook:
     """
-    第一阶段轻量 Runtime Hook。
+    轻量 Runtime Hook。
     """
 
     async def on_loop_step_completed(self, event: LoopStepCompletedEvent) -> None:
@@ -37,10 +37,10 @@ class RuntimeHook:
 
     async def on_tool_call_completed(self, event: ToolCallCompletedEvent) -> None:
         """
-        处理 mock executor 调用完成事件。
+        处理工具调用完成事件。
 
         Args:
-            event (ToolCallCompletedEvent): mock executor 调用完成事件。
+            event (ToolCallCompletedEvent): 工具调用完成事件。
         """
         try:
             await ToolCall.create(

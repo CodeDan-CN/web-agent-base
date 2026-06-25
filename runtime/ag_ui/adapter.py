@@ -140,8 +140,8 @@ class AGUIEventAdapter:
         """
         event = self._base("TOOL_CALL_START", run_id, thread_id)
         event["toolCallId"] = tool_call_id
-        event["toolName"] = self._tool_name(decision.action)
-        event["label"] = self._tool_label(decision.action)
+        event["toolName"] = self._tool_name(decision)
+        event["label"] = self._tool_label(decision)
         return event
 
     def tool_call_args(
@@ -381,38 +381,73 @@ class AGUIEventAdapter:
             str: 展示文案。
         """
         if decision.action == LoopAction.CALL_SKILL:
-            return "我会先整理你提供的文本，再提取出关键要点。"
+            return self._skill_planning_label(self._tool_name(decision))
         if decision.action == LoopAction.CALL_AGENT:
             return "我会根据你的目标和约束生成一版推进方案。"
         if decision.action == LoopAction.ASK_USER:
             return "我需要先确认缺少的信息，再继续处理。"
         return "我会根据当前信息直接整理回答。"
 
-    def _tool_name(self, action: LoopAction) -> str:
+    def _tool_name(self, decision: ActionDecision) -> str:
         """
         获取工具名称。
 
         Args:
-            action (LoopAction): Action。
+            decision (ActionDecision): Action 决策。
 
         Returns:
             str: 工具名称。
         """
-        return "content_extract_skill" if action == LoopAction.CALL_SKILL else "planning_worker"
+        if decision.action == LoopAction.CALL_SKILL:
+            raw_name = str(
+                decision.action_detail.get("skill_id")
+                or decision.action_detail.get("name")
+                or "unknown_skill"
+            )
+            return "content_extract" if raw_name == "content_extract_skill" else raw_name
+        return str(decision.action_detail.get("name") or "planning_worker")
 
-    def _tool_label(self, action: LoopAction) -> str:
+    def _tool_label(self, decision: ActionDecision) -> str:
         """
         获取工具展示文案。
 
         Args:
-            action (LoopAction): Action。
+            decision (ActionDecision): Action 决策。
 
         Returns:
             str: 展示文案。
         """
-        if action == LoopAction.CALL_SKILL:
-            return "正在整理文本"
+        if decision.action == LoopAction.CALL_SKILL:
+            return self._skill_tool_label(self._tool_name(decision))
         return "正在生成方案"
+
+    def _skill_planning_label(self, skill_id: str) -> str:
+        """
+        获取 Skill 下一步安排文案。
+        """
+        labels = {
+            "content_extract": "我会先整理你提供的文本，再提取出关键内容。",
+            "amap_geocode": "我会先解析地址，确认后续查询需要的位置编码。",
+            "amap_weather": "我会查询对应区域的天气，再整理成可读结果。",
+            "amap_direction_driving": "我会查询起终点之间的驾车路线。",
+            "amap_route_weather_plan": "我会把地址解析、路线查询和天气查询串起来处理。",
+            "travel_briefing_formatter": "我会把路线和天气结果整理成出行建议。",
+        }
+        return labels.get(skill_id, "我会调用合适的能力处理这一步。")
+
+    def _skill_tool_label(self, skill_id: str) -> str:
+        """
+        获取 Skill 执行中展示文案。
+        """
+        labels = {
+            "content_extract": "正在整理文本",
+            "amap_geocode": "正在解析地址",
+            "amap_weather": "正在查询天气",
+            "amap_direction_driving": "正在查询路线",
+            "amap_route_weather_plan": "正在组合路线和天气",
+            "travel_briefing_formatter": "正在生成出行建议",
+        }
+        return labels.get(skill_id, "正在调用能力")
 
     def _summarize_args(self, args: dict[str, Any]) -> dict[str, Any]:
         """
@@ -452,7 +487,7 @@ class AGUIEventAdapter:
         if feedback.state == LoopState.FAILED:
             return {"phase": "failed", "label": "无法继续完成"}
         if decision.action == LoopAction.CALL_SKILL:
-            return {"phase": "tool_result_ready", "label": "文本处理已完成，正在组织回答"}
+            return {"phase": "tool_result_ready", "label": "能力调用已完成，正在组织回答"}
         return {"phase": "tool_result_ready", "label": "规划分析已完成，正在组织回答"}
 
     def _clip(self, text: str, limit: int = 160) -> str:

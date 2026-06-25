@@ -1,0 +1,40 @@
+{
+  "skill_id": "amap_weather",
+  "name": "高德天气查询",
+  "description": "调用高德天气查询接口，根据 adcode 查询实时天气或天气预报。",
+  "executor": {
+    "type": "api",
+    "endpoint": "https://restapi.amap.com/v3/weather/weatherInfo",
+    "method": "GET",
+    "auth": {
+      "type": "query",
+      "param": "key",
+      "env": "AMAP_WEB_SERVICE_KEY"
+    },
+    "timeout_ms": 10000,
+    "response_mapping": {
+      "kind": "amap_weather"
+    }
+  },
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "city": {"type": "string"},
+      "extensions": {"type": "string", "enum": ["base", "all"]}
+    },
+    "required": ["city"],
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "enum": ["success", "partial_success", "missing_params", "failed"]},
+      "data": {"type": "object"},
+      "summary": {"type": "string"},
+      "missing_params": {"type": "array", "items": {"type": "string"}},
+      "error": {"type": ["string", "null"]}
+    },
+    "required": ["status", "data", "summary", "missing_params", "error"],
+    "additionalProperties": false
+  }
+}

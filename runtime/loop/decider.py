@@ -52,10 +52,11 @@ class LLMLoopDecider:
         return (
             "你是 Agent Runtime 的 LoopDecider。"
             "你只负责根据当前状态、用户输入、Agent 资产和上下文选择下一步 Action。"
-            "不要直接执行工具，不要暴露 State、Action、mock、测试等内部信息给用户。"
-            "第一阶段只有两个外部 mock executor："
-            "content_extract_skill 用于文本提取、摘要、要点整理；"
-            "planning_worker 用于规划、拆解、方案、学习路线。"
+            "不要直接执行工具，不要暴露 State、Action、测试等内部信息给用户。"
+            "如果选择 call_skill，必须从 available_skills 中选择一个 skill_id，并提供符合其 required_input 的 input。"
+            "Action input 的值必须能从 user_message、session_context 或 previous_action_result 中找到依据。"
+            "如果没有足够参数调用 Skill，不要编造参数，不要用当前位置、默认值、未知等占位内容补齐必填字段，可以选择 ask_user。"
+            "call_agent 当前只用于规划、拆解、方案、学习路线，目标为 planning_worker。"
             "如果信息不足，可以选择 ask_user；如果可以直接回答，选择 answer_user。"
             "如果当前状态是 missing_params 或 awaiting_user，需要先判断用户补充是否已经足够继续 call_skill 或 call_agent。"
             "必须只输出 JSON 对象，不要输出 Markdown。"
@@ -86,6 +87,7 @@ class LLMLoopDecider:
                 if context.previous_action_result
                 else None
             ),
+            "available_skills": context.skill_catalog,
             "allowed_actions": [
                 LoopAction.ANSWER_USER.value,
                 LoopAction.CALL_SKILL.value,
@@ -95,7 +97,8 @@ class LLMLoopDecider:
             "output_schema": {
                 "action": "answer_user | call_skill | call_agent | ask_user",
                 "action_detail": {
-                    "name": "content_extract_skill 或 planning_worker，可选",
+                    "skill_id": "call_skill 时填写 available_skills 中的 skill_id",
+                    "name": "call_agent 时填写 planning_worker，可选兼容字段",
                     "input": "Action 输入对象，可选",
                     "question": "ask_user 时的追问，可选",
                     "answer_instruction": "answer_user 时的回答要求，可选",

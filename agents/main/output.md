@@ -7,7 +7,7 @@
 - State
 - Action
 - Harness
-- mock executor
+- executor
 - 测试用例
 - 数据库表名
 

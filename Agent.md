@@ -208,10 +208,16 @@ Agent 元信息通过目录约定和 Markdown 内容推导，不使用 `agent.ya
 | Loop 状态、Action、Runtime、Harness、State Manager | `docs/PRD/Loop 设计优化版本.md` |
 | 数据库、API、Runtime Hook、技术实现方案 | `docs/技术方案/技术方案.md` |
 | 后续暂缓实现或演进事项 | `docs/技术方案/技术债务.md` |
+| 创建或调整 Skill | `Skill_Build.md` |
+| 创建或调整 worker agent | `Agent_Build.md` |
 
 实现时必须以这些文档为准。
 
 如果发现文档之间存在冲突，应先修正文档并确认共识，再继续实现。
+
+新增 Skill 必须遵循 `Skill_Build.md`。
+
+新增 worker agent 必须遵循 `Agent_Build.md`。
 
 ## 六、开发规则
 

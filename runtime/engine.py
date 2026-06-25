@@ -25,7 +25,7 @@ from utils.llm_client import LLMClient
 
 class RuntimeEngine:
     """
-    第一阶段 Agent Runtime 主编排器。
+    Agent Runtime 主编排器。
 
     Attributes:
         llm_client (LLMClient): 模型调用客户端。
@@ -517,14 +517,10 @@ class RuntimeEngine:
         input_payload = dict(action_input) if isinstance(action_input, dict) else {}
         input_payload["user_message"] = user_message
         input_payload["session_context"] = session_context
-        tool_name = (
-            "content_extract_skill"
-            if decision.action == LoopAction.CALL_SKILL
-            else "planning_worker"
-        )
+        tool_name = self._tool_name(decision)
         await self.runtime_hook.on_tool_call_completed(
             ToolCallCompletedEvent(
-            tool_call_id=tool_call_id,
+                tool_call_id=tool_call_id,
                 run_id=run_id,
                 session_id=session_id,
                 action=decision.action.value,
@@ -534,3 +530,22 @@ class RuntimeEngine:
                 status=result.status,
             )
         )
+
+    def _tool_name(self, decision: ActionDecision) -> str:
+        """
+        获取工具或 worker 名称。
+
+        Args:
+            decision (ActionDecision): Action 决策。
+
+        Returns:
+            str: 工具或 worker 名称。
+        """
+        if decision.action == LoopAction.CALL_SKILL:
+            raw_name = str(
+                decision.action_detail.get("skill_id")
+                or decision.action_detail.get("name")
+                or "unknown_skill"
+            )
+            return "content_extract" if raw_name == "content_extract_skill" else raw_name
+        return str(decision.action_detail.get("name") or "planning_worker")

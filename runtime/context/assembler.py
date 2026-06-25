@@ -17,7 +17,8 @@ class RuntimeContext:
         session_state (SessionState): 会话状态。
         previous_action_result (ActionResult | None): 上一次动作结果。
         harness_feedback (dict[str, Any] | None): Harness 反馈。
-        session_context (dict[str, Any]): mock executor 会话上下文。
+        session_context (dict[str, Any]): 会话上下文。
+        skill_catalog (list[dict[str, Any]]): 当前 Agent 可用 Skill 目录。
     """
 
     request: RuntimeRequest
@@ -26,6 +27,7 @@ class RuntimeContext:
     previous_action_result: ActionResult | None
     harness_feedback: dict[str, Any] | None
     session_context: dict[str, Any]
+    skill_catalog: list[dict[str, Any]]
 
 
 class ContextAssembler:
@@ -70,4 +72,5 @@ class ContextAssembler:
             previous_action_result=previous_action_result,
             harness_feedback=harness_feedback,
             session_context=session_context,
+            skill_catalog=agent_definition.skill_registry.list_for_prompt(),
         )
