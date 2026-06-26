@@ -1,6 +1,6 @@
 # tools
 
-## Skill 调用
+### Skill 调用
 
 可用 Skill 由 Runtime 扫描 `skills/` 目录后注入到 LoopDecider。
 
@@ -15,7 +15,7 @@
 
 - `content_extract`：文本提取、摘要、要点整理。
 
-## Worker 调用
+### Worker 调用
 
 可用 Worker 由 Runtime 扫描 `agents/workers/` 目录后注入到 LoopDecider。
 

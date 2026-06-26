@@ -295,13 +295,45 @@ event: ag-ui
 data: {...}
 ```
 
-### 查询会话状态
+### 会话管理
 
 ```http
-GET /session/{session_id}?user_id=user_001&agent_id=main
+POST /sessions
 ```
 
-响应包含：
+创建一个新会话。
+
+```http
+GET /sessions?user_id=user_001&agent_id=main
+```
+
+查询当前用户在指定 Agent 下的会话列表。
+
+```http
+GET /sessions/{session_id}?user_id=user_001&agent_id=main
+```
+
+查询会话详情。
+
+```http
+GET /sessions/{session_id}/turns?user_id=user_001&agent_id=main
+```
+
+查询会话聊天记录。
+
+```http
+PATCH /sessions/{session_id}
+```
+
+更新会话标题。
+
+```http
+DELETE /sessions/{session_id}?user_id=user_001&agent_id=main
+```
+
+软删除会话。
+
+会话详情响应包含：
 
 - `state`
 - `loop_count`

@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from exception.error_code import BizErrorCode
 from runtime.models import ActionDecision, ActionResult, HarnessFeedback, RuntimeRequest
 from runtime.state.types import LoopAction, LoopState
 from schema.db.session_state import SessionState
@@ -27,12 +28,15 @@ class StateManager:
             session_id=session_id,
         )
         if existing:
+            if existing.deleted_at:
+                raise BizErrorCode.NOT_FOUND.exception("会话不存在")
             return existing
         state = SessionState(
             id=uuid4().hex,
             session_id=session_id,
             user_id=request.user_id,
             agent_id=request.agent_id,
+            title=self._title_from_message(request.message),
             state=LoopState.NEW_REQUEST.value,
             loop_count=0,
             pending_action=None,
@@ -108,6 +112,8 @@ class StateManager:
         session_state.missing_params = (
             missing_params if state == LoopState.AWAITING_USER else []
         )
+        if session_state.title == "新会话":
+            session_state.title = self._title_from_message(user_message)
         await session_state.save()
 
     def missing_params_from_feedback(
@@ -130,3 +136,18 @@ class StateManager:
         if result and result.missing_params:
             return result.missing_params
         return []
+
+    def _title_from_message(self, message: str) -> str:
+        """
+        根据首条用户消息生成会话标题。
+
+        Args:
+            message (str): 用户消息。
+
+        Returns:
+            str: 会话标题。
+        """
+        title = " ".join(message.strip().split())
+        if not title:
+            return "新会话"
+        return title[:40]

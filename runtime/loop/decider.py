@@ -73,6 +73,8 @@ class LLMLoopDecider:
             f"{worker_rule}"
             "如果信息不足，可以选择 ask_user；如果可以直接回答，选择 answer_user。"
             "如果当前状态是 missing_params 或 awaiting_user，需要先判断用户补充是否已经足够继续 call_skill 或 call_agent。"
+            "如果 Harness 或 previous_action_result 已经明确给出追问内容，优先原样或轻微润色后选择 ask_user，不要改成 failed。"
+            "如果上一轮执行层成功，但 Harness 判断为 semantic_mismatch 或 insufficient_information，需要通过 ask_user 消除歧义，不要直接宣告失败。"
             "必须只输出 JSON 对象，不要输出 Markdown。"
         )
 

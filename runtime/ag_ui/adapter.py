@@ -313,7 +313,7 @@ class AGUIEventAdapter:
         """
         event = self._base("RUN_FINISHED", run_id, thread_id)
         event["state"] = state.value
-        event["label"] = "已完成"
+        event["label"] = self._run_finished_label(state)
         return event
 
     def run_error(self, run_id: str, thread_id: str, message: str) -> dict:
@@ -511,6 +511,24 @@ class AGUIEventAdapter:
         if decision.action == LoopAction.CALL_SKILL:
             return {"phase": "tool_result_ready", "label": "能力调用已完成，正在组织回答"}
         return {"phase": "tool_result_ready", "label": "Worker 结果已返回，正在组织回答"}
+
+    def _run_finished_label(self, state: LoopState) -> str:
+        """
+        获取 Run 结束展示文案。
+
+        Args:
+            state (LoopState): 最终状态。
+
+        Returns:
+            str: 展示文案。
+        """
+        if state == LoopState.COMPLETED:
+            return "已完成"
+        if state in {LoopState.MISSING_PARAMS, LoopState.AWAITING_USER}:
+            return "需要补充信息"
+        if state == LoopState.FAILED:
+            return "无法继续完成"
+        return "已结束"
 
     def _clip(self, text: str, limit: int = 160) -> str:
         """

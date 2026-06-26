@@ -2,6 +2,7 @@ from typing import Any
 from uuid import uuid4
 
 from exception.error_code import BizErrorCode
+from runtime.ag_ui.adapter import AGUIEventAdapter
 from runtime.context.assembler import RuntimeContext
 from runtime.models import ActionDecision, ActionResult, RuntimeRequest, RuntimeResult
 from runtime.workers.worker_registry import WorkerRegistry
@@ -28,6 +29,9 @@ class WorkerExecutor:
         self,
         context: RuntimeContext,
         decision: ActionDecision,
+        agui_adapter: AGUIEventAdapter | None = None,
+        parent_run_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> ActionResult:
         """
         调用 Worker Agent，并将结果转换为主 Agent 的 ActionResult。
@@ -35,6 +39,9 @@ class WorkerExecutor:
         Args:
             context (RuntimeContext): Runtime 上下文。
             decision (ActionDecision): call_agent 决策。
+            agui_adapter (AGUIEventAdapter | None): 父 AG-UI 适配器。
+            parent_run_id (str | None): 父 Run ID。
+            parent_session_id (str | None): 父 Session ID。
 
         Returns:
             ActionResult: Worker 调用结果。
@@ -46,7 +53,14 @@ class WorkerExecutor:
         if worker_id not in workers:
             raise BizErrorCode.ACTION_EXECUTE_ERROR.exception(f"未知 Worker: {worker_id}")
         task_package = await self._build_task_package(context, decision, worker_id)
-        worker_result = await self._run_worker(context, worker_id, task_package)
+        worker_result = await self._run_worker(
+            context,
+            worker_id,
+            task_package,
+            agui_adapter,
+            parent_run_id,
+            parent_session_id,
+        )
         return self._to_action_result(worker_id, task_package, worker_result)
 
     def _worker_id(self, decision: ActionDecision) -> str:
@@ -119,6 +133,9 @@ class WorkerExecutor:
         context: RuntimeContext,
         worker_id: str,
         task_package: dict[str, Any],
+        agui_adapter: AGUIEventAdapter | None = None,
+        parent_run_id: str | None = None,
+        parent_session_id: str | None = None,
     ) -> RuntimeResult:
         """
         启动 Worker Runtime。
@@ -127,6 +144,9 @@ class WorkerExecutor:
             context (RuntimeContext): Runtime 上下文。
             worker_id (str): Worker ID。
             task_package (dict[str, Any]): Worker Task Package。
+            agui_adapter (AGUIEventAdapter | None): 父 AG-UI 适配器。
+            parent_run_id (str | None): 父 Run ID。
+            parent_session_id (str | None): 父 Session ID。
 
         Returns:
             RuntimeResult: Worker 运行结果。
@@ -149,7 +169,93 @@ class WorkerExecutor:
                 "worker_task_package": task_package,
             },
         )
-        return await RuntimeEngine().run(worker_request)
+        worker_agui_adapter = self._worker_agui_adapter(
+            parent_adapter=agui_adapter,
+            worker_id=worker_id,
+            parent_run_id=parent_run_id or "",
+            parent_session_id=parent_session_id or context.session_state.session_id,
+        )
+        return await RuntimeEngine().run(worker_request, worker_agui_adapter)
+
+    def _worker_agui_adapter(
+        self,
+        parent_adapter: AGUIEventAdapter | None,
+        worker_id: str,
+        parent_run_id: str,
+        parent_session_id: str,
+    ) -> AGUIEventAdapter | None:
+        """
+        构建 Worker 事件透传适配器。
+
+        Args:
+            parent_adapter (AGUIEventAdapter | None): 父 AG-UI 适配器。
+            worker_id (str): Worker ID。
+            parent_run_id (str): 父 Run ID。
+            parent_session_id (str): 父 Session ID。
+
+        Returns:
+            AGUIEventAdapter | None: Worker AG-UI 适配器。
+        """
+        if not parent_adapter:
+            return None
+
+        async def emit(event: dict[str, Any]) -> None:
+            mapped = self._map_worker_agui_event(
+                event,
+                worker_id,
+                parent_run_id,
+                parent_session_id,
+            )
+            if mapped:
+                await parent_adapter.emit(mapped)
+
+        return AGUIEventAdapter(emit)
+
+    def _map_worker_agui_event(
+        self,
+        event: dict[str, Any],
+        worker_id: str,
+        parent_run_id: str,
+        parent_session_id: str,
+    ) -> dict[str, Any] | None:
+        """
+        过滤并包装 Worker AG-UI 事件。
+
+        Args:
+            event (dict[str, Any]): Worker 原始事件。
+            worker_id (str): Worker ID。
+            parent_run_id (str): 父 Run ID。
+            parent_session_id (str): 父 Session ID。
+
+        Returns:
+            dict[str, Any] | None: 外层 UI 可展示事件。
+        """
+        event_type = str(event.get("type") or "")
+        if event_type in {
+            "RUN_STARTED",
+            "STATE_SNAPSHOT",
+            "STEP_STARTED",
+            "STEP_FINISHED",
+            "TEXT_MESSAGE_START",
+            "TEXT_MESSAGE_CONTENT",
+            "TEXT_MESSAGE_END",
+        }:
+            return None
+        mapped = dict(event)
+        mapped["threadId"] = parent_session_id
+        mapped["source"] = "worker"
+        mapped["sourceAgentId"] = worker_id
+        mapped["parentRunId"] = parent_run_id
+        mapped["parentToolCallId"] = f"{parent_run_id}:{worker_id}"
+        mapped["depth"] = 1
+        if event_type == "RUN_FINISHED":
+            state = str(mapped.get("state") or "")
+            if state != "completed":
+                return None
+            mapped["label"] = "Worker 领域结果已返回"
+        if event_type == "RUN_ERROR":
+            mapped["label"] = "Worker 执行失败"
+        return mapped
 
     def _parent_session_context(self, context: RuntimeContext) -> dict[str, Any]:
         """
@@ -218,6 +324,8 @@ class WorkerExecutor:
             "worker_state": worker_result.state.value,
             "worker_answer": worker_result.answer,
             "worker_question": worker_result.question,
+            "worker_result_data": worker_result.data,
+            "worker_result_summary": worker_result.summary,
             "task_package": task_package,
         }
         if worker_result.question:
@@ -228,11 +336,13 @@ class WorkerExecutor:
                 question=worker_result.question,
                 missing_params=["worker_required_information"],
             )
-        if worker_result.answer:
+        if worker_result.state.value == "completed" and (
+            worker_result.answer or worker_result.data
+        ):
             return ActionResult(
                 status="success",
                 data=data,
-                summary="Worker 已返回处理结果",
+                summary=worker_result.summary or "Worker 已返回处理结果",
             )
         return ActionResult(
             status="failed",

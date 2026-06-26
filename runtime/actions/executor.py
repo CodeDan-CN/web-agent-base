@@ -64,7 +64,13 @@ class ActionExecutor:
         if decision.action == LoopAction.CALL_SKILL:
             return await self._call_skill(context, decision)
         if decision.action == LoopAction.CALL_AGENT:
-            return await self._call_agent(context, decision)
+            return await self._call_agent(
+                context,
+                decision,
+                agui_adapter,
+                run_id,
+                session_id,
+            )
         raise BizErrorCode.ACTION_EXECUTE_ERROR.exception("不支持的 Action")
 
     async def _answer_user(
@@ -88,6 +94,8 @@ class ActionExecutor:
         Returns:
             ActionResult: 回答结果。
         """
+        if self._should_return_structured_worker_result(context):
+            return self._structured_worker_result(context)
         system_prompt = (
             "你是当前 Agent 的最终回答生成器。"
             "请根据用户请求、Agent 文件、上下文和上一轮执行结果自然回答。"
@@ -105,6 +113,50 @@ class ActionExecutor:
             return ActionResult(status="success", answer=answer, summary="已生成回答")
         answer = await self.llm_client.chat_text(system_prompt, user_prompt, max_tokens=3000)
         return ActionResult(status="success", answer=answer, summary="已生成回答")
+
+    def _should_return_structured_worker_result(
+        self,
+        context: RuntimeContext,
+    ) -> bool:
+        """
+        判断当前 Worker 是否应直接返回结构化结果给主 Agent。
+
+        Args:
+            context (RuntimeContext): Runtime 上下文。
+
+        Returns:
+            bool: 是否直接返回结构化结果。
+        """
+        if context.agent_definition.kind != "worker":
+            return False
+        task_package = context.request.metadata.get("worker_task_package")
+        if not isinstance(task_package, dict):
+            return False
+        output_contract = task_package.get("output_contract")
+        if not isinstance(output_contract, dict):
+            return False
+        return str(output_contract.get("final_answer_owner") or "") == "main_agent"
+
+    def _structured_worker_result(self, context: RuntimeContext) -> ActionResult:
+        """
+        直接返回给主 Agent 的结构化 Worker 结果。
+
+        Args:
+            context (RuntimeContext): Runtime 上下文。
+
+        Returns:
+            ActionResult: 结构化完成结果。
+        """
+        previous = context.previous_action_result
+        if previous is None:
+            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception("Worker 缺少可返回的结构化结果")
+        return ActionResult(
+            status=previous.status or "success",
+            data=previous.data,
+            summary=previous.summary or "Worker 已完成领域结果整理",
+            missing_params=previous.missing_params,
+            error=previous.error,
+        )
 
     async def _answer_user_stream(
         self,
@@ -178,6 +230,9 @@ class ActionExecutor:
         self,
         context: RuntimeContext,
         decision: ActionDecision,
+        agui_adapter: AGUIEventAdapter | None = None,
+        run_id: str | None = None,
+        session_id: str | None = None,
     ) -> ActionResult:
         """
         调用 Worker Agent executor。
@@ -185,11 +240,20 @@ class ActionExecutor:
         Args:
             context (RuntimeContext): Runtime 上下文。
             decision (ActionDecision): Action 决策。
+            agui_adapter (AGUIEventAdapter | None): AG-UI 适配器。
+            run_id (str | None): 父 Run ID。
+            session_id (str | None): 父 Session ID。
 
         Returns:
             ActionResult: worker executor 结果。
         """
-        return await self.worker_executor.execute(context, decision)
+        return await self.worker_executor.execute(
+            context,
+            decision,
+            agui_adapter,
+            run_id,
+            session_id,
+        )
 
     def _build_answer_prompt(
         self,

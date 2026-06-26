@@ -118,6 +118,8 @@ class RuntimeEngine:
         missing_params: list[str] = []
         final_answer: str | None = None
         final_question: str | None = None
+        final_data: dict | None = None
+        final_summary = ""
         final_state = current_state
         action_history: list[dict] = []
         try:
@@ -257,6 +259,8 @@ class RuntimeEngine:
                     }
                 if next_state == LoopState.COMPLETED:
                     final_answer = result.answer
+                    final_data = result.data
+                    final_summary = result.summary
                     break
                 if next_state == LoopState.AWAITING_USER:
                     final_question = result.question
@@ -305,6 +309,8 @@ class RuntimeEngine:
                 state=final_state,
                 answer=final_answer,
                 question=final_question,
+                data=final_data or {},
+                summary=final_summary,
             )
         except Exception as exc:
             await self._finish_agent_run(run, LoopState.FAILED, None, str(exc))

@@ -94,6 +94,8 @@ class HarnessFeedback:
         summary (str): 评估摘要。
         missing_params (list[str]): 缺失参数。
         reason (str): 评估原因。
+        reason_category (str): 原因分类。
+        suggested_question (str | None): 建议追问。
     """
 
     state: LoopState
@@ -101,6 +103,8 @@ class HarnessFeedback:
     summary: str
     missing_params: list[str] = field(default_factory=list)
     reason: str = ""
+    reason_category: str = ""
+    suggested_question: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -115,6 +119,8 @@ class HarnessFeedback:
             "summary": self.summary,
             "missing_params": self.missing_params,
             "reason": self.reason,
+            "reason_category": self.reason_category,
+            "suggested_question": self.suggested_question,
         }
 
 
@@ -130,6 +136,8 @@ class RuntimeResult:
         state (LoopState): 最终状态。
         answer (str | None): 回答内容。
         question (str | None): 追问内容。
+        data (dict[str, Any]): 完成态结构化结果。
+        summary (str): 完成态摘要。
     """
 
     request_id: str
@@ -138,3 +146,5 @@ class RuntimeResult:
     state: LoopState
     answer: str | None = None
     question: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+    summary: str = ""

@@ -45,28 +45,3 @@ class AgentRunResponse(BaseModel):
     answer: str | None = None
     need_user_input: bool = False
     question: str | None = None
-
-
-class SessionStateResponse(BaseModel):
-    """
-    会话状态响应。
-
-    Attributes:
-        session_id (str): 会话 ID。
-        user_id (str): 用户 ID。
-        agent_id (str): Agent ID。
-        state (str): 当前状态。
-        loop_count (int): 最近一次 Loop 次数。
-        pending_action (dict[str, Any] | None): 待继续动作。
-        missing_params (list[str]): 缺失参数。
-        conversation_summary (str): 轻量会话摘要。
-    """
-
-    session_id: str
-    user_id: str
-    agent_id: str
-    state: str
-    loop_count: int
-    pending_action: dict[str, Any] | None = None
-    missing_params: list[str] = Field(default_factory=list)
-    conversation_summary: str = ""

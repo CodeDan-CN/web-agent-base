@@ -61,6 +61,9 @@ class LLMHarnessEvaluator:
             "你是 Agent Runtime 的 LLM Harness。"
             "你只评估 call_skill 或 call_agent 的执行结果是否足以让 Loop 继续。"
             "不要按 status 简单映射，必须结合用户请求、Action 输入、缺参信息和执行结果判断。"
+            "failed 只用于代码执行失败、接口调用失败、链路执行失败、依赖不可用等执行层失败，且用户补充信息也无法补救的情况。"
+            "如果执行层已经成功，但结果与用户真实意图不一致，或仍存在地址、对象、范围、时间、出行方式等可补救歧义，必须输出 missing_params，不要输出 failed。"
+            "如果判断为 missing_params，尽量给出 suggested_question，便于 Loop 直接追问用户。"
             "允许输出 state 只能是 ready_to_plan、missing_params、failed。"
             "必须只输出 JSON 对象，不要输出 Markdown。"
         )
@@ -107,6 +110,8 @@ class LLMHarnessEvaluator:
                 "summary": "评估摘要",
                 "missing_params": [],
                 "reason": "判断原因",
+                "reason_category": "execution_failure | semantic_mismatch | insufficient_information | other",
+                "suggested_question": "缺参时建议追问，可选",
             },
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -193,4 +198,8 @@ class LLMHarnessEvaluator:
             summary=str(payload.get("summary", "")),
             missing_params=[str(item) for item in missing_params],
             reason=str(payload.get("reason", "")),
+            reason_category=str(payload.get("reason_category", "")),
+            suggested_question=(
+                str(payload.get("suggested_question", "")).strip() or None
+            ),
         )
