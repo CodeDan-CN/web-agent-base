@@ -5,6 +5,8 @@ from typing import Any
 
 from schema.db.agent_event import AgentEvent, AgentEventContext, AgentEventRun
 from schema.db.agent_run import AgentRun
+from schema.db.conversation_turn import ConversationTurn
+from runtime.context.prompt_safety import remove_event_identifiers
 from utils.json_utils import parse_json_object
 from utils.llm_client import LLMClient
 
@@ -37,7 +39,7 @@ class EventPromptContext:
         """
         return {
             "should_inject": self.should_inject,
-            "event_dialogues": self.event_dialogues,
+            "event_dialogues": remove_event_identifiers(self.event_dialogues),
         }
 
 
@@ -276,6 +278,20 @@ class EventContextPreloader:
         for link in reversed(links):
             if exclude_run_id and link.run_id == exclude_run_id:
                 continue
+            turn = await ConversationTurn.get_or_none(run_id=link.run_id)
+            if turn:
+                dialogues.append(
+                    {
+                        "turn_id": turn.turn_id,
+                        "run_id": turn.run_id,
+                        "event_id": turn.event_id or "",
+                        "agent_id": turn.agent_id,
+                        "user": turn.user_message,
+                        "assistant": turn.assistant_message,
+                        "final_state": turn.final_state,
+                    }
+                )
+                continue
             run = await AgentRun.get_or_none(id=link.run_id)
             if not run:
                 continue
@@ -283,8 +299,12 @@ class EventContextPreloader:
                 continue
             dialogues.append(
                 {
+                    "run_id": run.id,
+                    "event_id": event_id,
+                    "agent_id": run.agent_id,
                     "user": run.user_message,
                     "assistant": run.final_answer or "",
+                    "final_state": run.final_state or "",
                 }
             )
         return dialogues

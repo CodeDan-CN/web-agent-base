@@ -5,7 +5,6 @@ from exception.error_code import BizErrorCode
 from runtime.context.assembler import RuntimeContext
 from runtime.models import ActionDecision, ActionResult, RuntimeRequest, RuntimeResult
 from runtime.workers.worker_registry import WorkerRegistry
-from schema.db.agent_run import AgentRun
 
 
 class WorkerExecutor:
@@ -103,7 +102,7 @@ class WorkerExecutor:
                 "conversation_summary": context.session_context.get("conversation_summary", ""),
                 "event_history": context.action_history,
                 "parent_session_context": self._parent_session_context(context),
-                "recent_turns": await self._recent_turns(context),
+                "recent_turns": context.session_context.get("recent_turns", []),
                 "retrieved_context": [],
                 "long_term_memory": [],
                 "memory_palace_refs": [],
@@ -114,31 +113,6 @@ class WorkerExecutor:
                 "final_answer_owner": "main_agent",
             },
         }
-
-    async def _recent_turns(self, context: RuntimeContext) -> list[dict[str, str]]:
-        """
-        读取当前主会话最近几轮已完成运行。
-
-        Args:
-            context (RuntimeContext): Runtime 上下文。
-
-        Returns:
-            list[dict[str, str]]: 最近对话。
-        """
-        runs = await AgentRun.filter(
-            user_id=context.request.user_id,
-            agent_id=context.request.agent_id,
-            session_id=context.session_state.session_id,
-        ).order_by("-created_at").limit(4)
-        turns = [
-            {
-                "user_message": run.user_message,
-                "final_answer": run.final_answer or "",
-                "final_state": run.final_state or "",
-            }
-            for run in runs
-        ]
-        return list(reversed(turns))
 
     async def _run_worker(
         self,

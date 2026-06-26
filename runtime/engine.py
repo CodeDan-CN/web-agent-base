@@ -10,6 +10,7 @@ from runtime.context.event_preloader import EventContextPreloader
 from runtime.events.manager import EventManager
 from runtime.harness.evaluator import LLMHarnessEvaluator
 from runtime.hooks.events import (
+    ConversationTurnCompletedEvent,
     EventSummaryRequestedEvent,
     LoopStepCompletedEvent,
     ToolCallCompletedEvent,
@@ -127,7 +128,7 @@ class RuntimeEngine:
                     if agui_adapter
                     else None,
                 )
-                context = self.context_assembler.assemble(
+                context = await self.context_assembler.assemble(
                     request=request,
                     agent_definition=agent_definition,
                     session_state=session_state,
@@ -274,6 +275,16 @@ class RuntimeEngine:
                 user_message=request.message,
             )
             await self._finish_agent_run(run, final_state, final_answer, None)
+            self._request_conversation_turn_completed(
+                run.id,
+                event.event_id,
+                request,
+                session_state.session_id,
+                final_state,
+                final_answer,
+                final_question,
+                previous_result,
+            )
             if request.agent_id == event.root_agent_id:
                 event = await self.event_manager.update_status(event, final_state)
                 self._request_event_summary_if_needed(
@@ -311,6 +322,50 @@ class RuntimeEngine:
                 else None,
             )
             raise
+
+    def _request_conversation_turn_completed(
+        self,
+        run_id: str,
+        event_id: str,
+        request: RuntimeRequest,
+        session_id: str,
+        final_state: LoopState,
+        final_answer: str | None,
+        final_question: str | None,
+        result: ActionResult | None,
+    ) -> None:
+        """
+        触发对话轮次完成 Hook。
+
+        Args:
+            run_id (str): AgentRun ID。
+            event_id (str): 事件 ID。
+            request (RuntimeRequest): Runtime 请求。
+            session_id (str): 会话 ID。
+            final_state (LoopState): 最终状态。
+            final_answer (str | None): 最终回答。
+            final_question (str | None): 最终追问。
+            result (ActionResult | None): 最后一次 Action 结果。
+        """
+        assistant_message = final_answer or final_question or ""
+        if not assistant_message and result:
+            assistant_message = result.summary or result.error or ""
+        if not assistant_message:
+            return
+        asyncio.create_task(
+            self.runtime_hook.on_conversation_turn_completed(
+                ConversationTurnCompletedEvent(
+                    run_id=run_id,
+                    session_id=session_id,
+                    user_id=request.user_id,
+                    agent_id=request.agent_id,
+                    event_id=event_id,
+                    user_message=request.message,
+                    assistant_message=assistant_message,
+                    final_state=final_state.value,
+                )
+            )
+        )
 
     def _request_event_summary_if_needed(
         self,

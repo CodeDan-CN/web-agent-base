@@ -76,3 +76,29 @@ class EventSummaryRequestedEvent:
     session_id: str
     trigger_agent_id: str
     final_state: str
+
+
+@dataclass
+class ConversationTurnCompletedEvent:
+    """
+    用户可见对话轮次完成事件。
+
+    Attributes:
+        run_id (str): AgentRun ID。
+        session_id (str): 会话 ID。
+        user_id (str): 用户 ID。
+        agent_id (str): Agent ID。
+        event_id (str): 事件 ID。
+        user_message (str): 用户输入。
+        assistant_message (str): Agent 最终回答或追问。
+        final_state (str): 最终状态。
+    """
+
+    run_id: str
+    session_id: str
+    user_id: str
+    agent_id: str
+    event_id: str
+    user_message: str
+    assistant_message: str
+    final_state: str

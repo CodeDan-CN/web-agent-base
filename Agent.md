@@ -218,6 +218,8 @@ Agent 元信息通过目录约定和 Markdown 内容推导，不使用 `agent.ya
 
 新增 worker agent 必须遵循 `Agent_Build.md`。
 
+任何业务 Agent 改造，必须先根据 `Agent_Build.md` 判断应调整 main agent、调整 worker agent、新增 worker agent，还是新增 Skill。
+
 ## 六、开发规则
 
 ### 代码分层

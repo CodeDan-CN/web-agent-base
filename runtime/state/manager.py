@@ -108,12 +108,6 @@ class StateManager:
         session_state.missing_params = (
             missing_params if state == LoopState.AWAITING_USER else []
         )
-        session_state.conversation_summary = self._build_conversation_summary(
-            session_state.conversation_summary,
-            user_message,
-            result,
-            state,
-        )
         await session_state.save()
 
     def missing_params_from_feedback(
@@ -136,31 +130,3 @@ class StateManager:
         if result and result.missing_params:
             return result.missing_params
         return []
-
-    def _build_conversation_summary(
-        self,
-        previous_summary: str,
-        user_message: str,
-        result: ActionResult | None,
-        state: LoopState,
-    ) -> str:
-        """
-        构建第一阶段轻量会话摘要。
-
-        Args:
-            previous_summary (str): 旧摘要。
-            user_message (str): 用户消息。
-            result (ActionResult | None): 执行结果。
-            state (LoopState): 当前状态。
-
-        Returns:
-            str: 新摘要。
-        """
-        result_summary = result.summary if result else ""
-        summary = (
-            f"{previous_summary}\n"
-            f"用户输入: {user_message}\n"
-            f"状态: {state.value}\n"
-            f"结果摘要: {result_summary}"
-        ).strip()
-        return summary[-3000:]

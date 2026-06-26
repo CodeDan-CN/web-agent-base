@@ -2,13 +2,16 @@ import logging
 from uuid import uuid4
 
 from runtime.hooks.events import (
+    ConversationTurnCompletedEvent,
     EventSummaryRequestedEvent,
     LoopStepCompletedEvent,
     ToolCallCompletedEvent,
 )
+from runtime.context.session_context_manager import SessionContextManager
 from schema.db.agent_event import AgentEventContext, AgentEventRun
 from schema.db.agent_run import AgentRun
 from schema.db.agent_run_step import AgentRunStep
+from schema.db.conversation_turn import ConversationTurn
 from schema.db.tool_call import ToolCall
 from utils.config import get_settings
 from utils.llm_client import LLMClient
@@ -20,6 +23,18 @@ class RuntimeHook:
     """
     轻量 Runtime Hook。
     """
+
+    def __init__(
+        self,
+        session_context_manager: SessionContextManager | None = None,
+    ) -> None:
+        """
+        初始化 RuntimeHook。
+
+        Args:
+            session_context_manager (SessionContextManager | None): 会话上下文管理器。
+        """
+        self.session_context_manager = session_context_manager or SessionContextManager()
 
     async def on_loop_step_completed(self, event: LoopStepCompletedEvent) -> None:
         """
@@ -78,6 +93,35 @@ class RuntimeHook:
                 await self._update_agent_event_summary(event, agent_id)
         except Exception:
             logger.exception("EventSummaryRequested hook failed")
+
+    async def on_conversation_turn_completed(
+        self,
+        event: ConversationTurnCompletedEvent,
+    ) -> None:
+        """
+        处理用户可见对话轮次完成事件。
+
+        Args:
+            event (ConversationTurnCompletedEvent): 对话轮次完成事件。
+        """
+        try:
+            await self.session_context_manager.record_turn(
+                run_id=event.run_id,
+                session_id=event.session_id,
+                user_id=event.user_id,
+                agent_id=event.agent_id,
+                event_id=event.event_id,
+                user_message=event.user_message,
+                assistant_message=event.assistant_message,
+                final_state=event.final_state,
+            )
+            await self.session_context_manager.compress_if_needed(
+                user_id=event.user_id,
+                agent_id=event.agent_id,
+                session_id=event.session_id,
+            )
+        except Exception:
+            logger.exception("ConversationTurnCompleted hook failed")
 
     async def _agent_ids_for_event(self, event_id: str) -> list[str]:
         """
@@ -170,15 +214,21 @@ class RuntimeHook:
         ).order_by("created_at")
         parts: list[str] = []
         for link in links:
+            turn = await ConversationTurn.get_or_none(run_id=link.run_id)
             run = await AgentRun.get_or_none(id=link.run_id)
-            if not run:
+            if turn:
+                parts.append(f"用户输入: {turn.user_message}")
+                parts.append(f"最终回复: {turn.assistant_message}")
+                parts.append(f"最终状态: {turn.final_state}")
+            elif run:
+                parts.append(f"用户输入: {run.user_message}")
+                if run.final_answer:
+                    parts.append(f"最终回答: {run.final_answer}")
+                if run.error_message:
+                    parts.append(f"错误: {run.error_message}")
+            else:
                 continue
-            parts.append(f"用户输入: {run.user_message}")
-            if run.final_answer:
-                parts.append(f"最终回答: {run.final_answer}")
-            if run.error_message:
-                parts.append(f"错误: {run.error_message}")
-            steps = await AgentRunStep.filter(run_id=run.id).order_by("step_index")
+            steps = await AgentRunStep.filter(run_id=link.run_id).order_by("step_index")
             for step in steps:
                 parts.append(
                     f"步骤{step.step_index}: {step.state_before} -> "
@@ -191,7 +241,7 @@ class RuntimeHook:
                     parts.append(f"步骤摘要: {summary}")
                 if question:
                     parts.append(f"追问: {question}")
-            calls = await ToolCall.filter(run_id=run.id).order_by("created_at")
+            calls = await ToolCall.filter(run_id=link.run_id).order_by("created_at")
             for call in calls:
                 output = call.output_payload or {}
                 parts.append(

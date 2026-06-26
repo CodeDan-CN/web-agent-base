@@ -24,6 +24,13 @@ class Settings:
         event_summary_direct_max_turns (int): 事件摘要直接汇总最大轮数。
         event_summary_direct_max_chars (int): 事件摘要直接汇总最大字符数。
         event_summary_target_chars (int): 事件摘要模型总结目标字符数。
+        session_context_max_tokens (int): 当前会话上下文 token 预算。
+        session_summary_trigger_ratio (float): 会话摘要压缩触发水位。
+        session_summary_target_after_compression_ratio (float): 压缩后目标水位。
+        session_recent_turn_min_count (int): 最近原始对话最小保护轮数。
+        session_recent_turn_max_count (int): 最近原始对话常规最大轮数。
+        session_summary_target_tokens (int): 会话摘要目标 token 数。
+        session_turn_compress_batch_size (int): 单次最多压缩 turn 数。
     """
 
     database_url: str
@@ -39,6 +46,13 @@ class Settings:
     event_summary_direct_max_turns: int
     event_summary_direct_max_chars: int
     event_summary_target_chars: int
+    session_context_max_tokens: int
+    session_summary_trigger_ratio: float
+    session_summary_target_after_compression_ratio: float
+    session_recent_turn_min_count: int
+    session_recent_turn_max_count: int
+    session_summary_target_tokens: int
+    session_turn_compress_batch_size: int
 
 
 def _to_tortoise_database_url(database_url: str) -> str:
@@ -96,5 +110,24 @@ def get_settings() -> Settings:
         ),
         event_summary_target_chars=int(
             os.getenv("EVENT_SUMMARY_TARGET_CHARS", "100")
+        ),
+        session_context_max_tokens=int(os.getenv("SESSION_CONTEXT_MAX_TOKENS", "6000")),
+        session_summary_trigger_ratio=float(
+            os.getenv("SESSION_SUMMARY_TRIGGER_RATIO", "0.8")
+        ),
+        session_summary_target_after_compression_ratio=float(
+            os.getenv("SESSION_SUMMARY_TARGET_AFTER_COMPRESSION_RATIO", "0.35")
+        ),
+        session_recent_turn_min_count=int(
+            os.getenv("SESSION_RECENT_TURN_MIN_COUNT", "4")
+        ),
+        session_recent_turn_max_count=int(
+            os.getenv("SESSION_RECENT_TURN_MAX_COUNT", "8")
+        ),
+        session_summary_target_tokens=int(
+            os.getenv("SESSION_SUMMARY_TARGET_TOKENS", "800")
+        ),
+        session_turn_compress_batch_size=int(
+            os.getenv("SESSION_TURN_COMPRESS_BATCH_SIZE", "6")
         ),
     )

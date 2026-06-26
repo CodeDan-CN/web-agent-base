@@ -1,5 +1,6 @@
 from schema.db.agent_run import AgentRun
 from schema.db.agent_run_step import AgentRunStep
+from schema.db.conversation_turn import ConversationTurn
 from schema.db.agent_event import AgentEvent, AgentEventContext, AgentEventRun
 from schema.db.session_state import SessionState
 from schema.db.tool_call import ToolCall
@@ -10,6 +11,7 @@ __all__ = [
     "AgentEventRun",
     "AgentRun",
     "AgentRunStep",
+    "ConversationTurn",
     "SessionState",
     "ToolCall",
 ]

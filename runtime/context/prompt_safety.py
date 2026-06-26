@@ -2,7 +2,16 @@ from copy import deepcopy
 from typing import Any
 
 
-EVENT_ID_KEYS = {"event_id", "parent_event_id", "event_chain_id", "matched_event_id", "related_event_id"}
+EVENT_ID_KEYS = {
+    "event_id",
+    "parent_event_id",
+    "event_chain_id",
+    "matched_event_id",
+    "related_event_id",
+    "turn_id",
+    "run_id",
+    "summary_batch_id",
+}
 
 
 def remove_event_identifiers(value: Any) -> Any:

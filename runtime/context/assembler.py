@@ -4,6 +4,7 @@ from typing import Any
 from runtime.agents.loader import AgentDefinition
 from runtime.context.event_preloader import EventPromptContext
 from runtime.context.prompt_safety import remove_event_identifiers
+from runtime.context.session_context_manager import SessionContextManager
 from runtime.models import ActionResult, RuntimeRequest
 from runtime.workers.worker_registry import WorkerRegistry
 from schema.db.session_state import SessionState
@@ -44,16 +45,22 @@ class ContextAssembler:
     Runtime 上下文组装器。
     """
 
-    def __init__(self, worker_registry: WorkerRegistry | None = None) -> None:
+    def __init__(
+        self,
+        worker_registry: WorkerRegistry | None = None,
+        session_context_manager: SessionContextManager | None = None,
+    ) -> None:
         """
         初始化 ContextAssembler。
 
         Args:
             worker_registry (WorkerRegistry | None): Worker 注册表。
+            session_context_manager (SessionContextManager | None): 会话上下文管理器。
         """
         self.worker_registry = worker_registry or WorkerRegistry()
+        self.session_context_manager = session_context_manager or SessionContextManager()
 
-    def assemble(
+    async def assemble(
         self,
         request: RuntimeRequest,
         agent_definition: AgentDefinition,
@@ -79,6 +86,11 @@ class ContextAssembler:
             RuntimeContext: Runtime 上下文。
         """
         prompt_event_context = event_prompt_context or EventPromptContext()
+        session_context_patch = await self.session_context_manager.build_session_context(
+            session_state=session_state,
+            event_dialogues=prompt_event_context.event_dialogues,
+            exclude_run_id=None,
+        )
         session_context = {
             "session_id": session_state.session_id,
             "pending_action": session_state.pending_action or {},
@@ -89,8 +101,7 @@ class ContextAssembler:
                 else None
             ),
             "action_history": remove_event_identifiers(action_history or []),
-            "conversation_summary": session_state.conversation_summary or "",
-            "event_context": prompt_event_context.to_prompt_dict(),
+            **session_context_patch,
         }
         return RuntimeContext(
             request=request,

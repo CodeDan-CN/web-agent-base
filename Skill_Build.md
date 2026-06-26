@@ -2,65 +2,99 @@
 
 本文档是本项目 Skill 创建 SOP。
 
-以后新增、迁移或调整 Skill 时，必须先阅读本文档。
+新增、迁移或调整 Skill 时，必须按本文档执行。
+
+本项目当前已支持三类 Skill：
+
+```text
+api
+code
+chain
+```
+
+Skill 只负责完成边界清晰的能力，不负责面向用户生成最终回答。
+
+Skill 执行结果必须结构化，并回到 Agent Loop 和 Harness。
 
 ---
 
 ## 一、Skill 定位
 
-Skill 是 Agent 或 worker 可调用的能力单元。
+Skill 是 Agent / worker 可调用的能力单元。
 
-Skill 只负责完成一个边界清晰的能力，不负责决定最终如何回复用户。
+它适合承载：
 
-Skill 执行结果必须结构化，并回到 Agent Loop 和 Harness。
+- 外部 API 调用。
+- 本地确定性代码处理。
+- 多个 Skill 组成的稳定链路。
 
-Skill 不直接面向用户输出最终回答。
+它不适合承载：
+
+- Agent 身份、语气、行为准则。
+- 最终用户回答的完整表达。
+- 用户长期记忆。
+- 未审计的动态代码。
+- 为了测试效果写死的问题关键词或规则。
 
 ---
 
 ## 二、Skill 归属规则
 
-### 放在 main agent 的 Skill
+### main Skill
 
-适合放在 `agents/main/skills/`：
+放在：
+
+```text
+agents/main/skills/
+```
+
+适合：
 
 - 当前业务模块通用能力。
 - 不属于某个明确领域 worker 的能力。
-- main agent 自己需要直接调用的轻量能力。
+- main 自己需要直接调用的轻量能力。
 
-示例：
+当前示例：
 
 ```text
 agents/main/skills/content_extract/
 ```
 
-### 放在 worker agent 的 Skill
+### worker Skill
 
-适合放在 `agents/workers/<worker_id>/skills/`：
+放在：
+
+```text
+agents/workers/<worker_id>/skills/
+```
+
+适合：
 
 - 领域 API。
-- 领域链路。
-- 只服务该 worker 的格式化或计算能力。
+- 领域内固定链路。
+- 只服务该 worker 的格式化、计算、转换能力。
 
-示例：
+当前示例：
 
 ```text
 agents/workers/amap_worker/skills/amap_geocode/
+agents/workers/amap_worker/skills/amap_weather/
 agents/workers/amap_worker/skills/amap_route_weather_plan/
 ```
 
-### 不允许
+### 归属原则
 
-- 不把领域 API 同时放在 main 和 worker。
-- 不把 API Key 写入 Skill 资产。
-- 不通过 Skill 目录动态执行未审计 Python 代码。
-- 不为通过测试写死用户问题或业务关键词。
+- 领域 Skill 只放到对应 worker。
+- main 不直接持有 worker 私有 Skill。
+- 同一个 Skill 不要同时放 main 和 worker。
+- API Key 不写入 Skill 资产。
+- Skill 资产目录不存放可动态执行的 Python 代码。
 
 ---
 
-## 三、Skill 目录结构
+## 三、目录结构
 
-每个 Skill 目录必须保持以下结构：
+每个 Skill 目录保持一致：
 
 ```text
 skills/
@@ -86,7 +120,7 @@ Skill 列表通过目录扫描得到。
 
 ---
 
-## 四、Skill 命名规则
+## 四、命名规则
 
 `skill_id` 使用小写蛇形命名。
 
@@ -108,42 +142,34 @@ amap_route_weather_plan
 
 要求：
 
-- 目录名必须等于 `schema.json` 里的 `skill_id`。
-- `skill_id` 不使用中文。
+- 目录名必须等于 `schema.json` 中的 `skill_id`。
+- 不使用中文。
 - 不使用空格。
-- 不使用版本号作为常规后缀，除非同一能力确实并存多个协议版本。
+- 不用版本号作为常规后缀，除非同一能力确实并存多个协议版本。
 
 ---
 
-## 五、统一输出结构
+## 五、SKILL.md 编写规则
 
-所有 Skill 必须返回统一结构：
+`SKILL.md` 给 Agent / worker 理解 Skill 使用边界。
 
-```json
-{
-  "status": "success",
-  "data": {},
-  "summary": "执行摘要",
-  "missing_params": [],
-  "error": null
-}
-```
+必须写清：
 
-状态枚举：
+- 用途。
+- 适用场景。
+- 不适用场景。
+- 必填参数。
+- 可选参数。
+- 调用注意事项。
+- 失败或缺参时的处理方式。
 
-```text
-success
-partial_success
-missing_params
-failed
-```
+不写：
 
-说明：
-
-- `data` 保存结构化结果。
-- `summary` 给 Harness 和 AG-UI 使用。
-- `missing_params` 只放业务缺参字段。
-- `error` 保存可追踪错误摘要，不放异常堆栈。
+- API Key。
+- 内部密钥。
+- 大段无关接口文档。
+- 最终用户回答模板。
+- 为某个测试问题特制的关键词规则。
 
 ---
 
@@ -166,17 +192,70 @@ failed
 
 - `executor.type` 必须是 `api`、`code` 或 `chain`。
 - `input_schema` 必须是 JSON Schema object。
+- `input_schema.required` 必须准确描述业务必填参数。
 - `output_schema` 必须校验统一输出结构。
-- 必填字段必须写入 `required`。
 - 不允许用代码默认值掩盖必填字段缺失。
+
+`SkillDefinition.to_catalog_item()` 会把以下信息注入 LoopDecider：
+
+```text
+skill_id
+name
+description
+executor_type
+required_input
+optional_input
+input_fields
+```
+
+因此 `description` 和字段 `description` 要写得足够清楚。
 
 ---
 
-## 七、API Skill SOP
+## 七、统一输出结构
+
+所有 Skill 必须返回统一结构：
+
+```json
+{
+  "status": "success",
+  "data": {},
+  "summary": "执行摘要",
+  "missing_params": [],
+  "error": null
+}
+```
+
+状态枚举：
+
+```text
+success
+partial_success
+missing_params
+failed
+```
+
+字段说明：
+
+| 字段 | 说明 |
+| --- | --- |
+| `status` | 执行状态 |
+| `data` | 结构化业务结果 |
+| `summary` | 给 Harness、AG-UI、上层 Agent 使用的简短摘要 |
+| `missing_params` | 缺少的业务参数 |
+| `error` | 可追踪错误摘要，不放异常堆栈 |
+
+Skill 结果不直接返回用户。
+
+最终回答由 Agent 的 `answer_user` 生成。
+
+---
+
+## 八、API Skill SOP
 
 API Skill 适合封装 HTTP / RPC / 外部服务接口。
 
-### 7.1 创建目录
+### 8.1 创建目录
 
 ```text
 agents/workers/amap_worker/skills/amap_geocode/
@@ -184,26 +263,12 @@ agents/workers/amap_worker/skills/amap_geocode/
 └── schema.json
 ```
 
-### 7.2 编写 SKILL.md
-
-必须说明：
-
-- 用途。
-- 适用场景。
-- 不适用场景。
-- 必填参数。
-- 调用注意事项。
-- 鉴权信息来自 `.env`，不写入资产。
-
-### 7.3 编写 schema.json
+### 8.2 编写 executor
 
 示例：
 
 ```json
 {
-  "skill_id": "amap_geocode",
-  "name": "高德地址解析",
-  "description": "调用高德地理编码接口，将地址转换为经纬度、adcode 和 citycode。",
   "executor": {
     "type": "api",
     "endpoint": "https://restapi.amap.com/v3/geocode/geo",
@@ -217,54 +282,47 @@ agents/workers/amap_worker/skills/amap_geocode/
     "response_mapping": {
       "kind": "amap_geocode"
     }
-  },
-  "input_schema": {
-    "type": "object",
-    "properties": {
-      "address": {"type": "string"},
-      "city": {"type": "string"}
-    },
-    "required": ["address"],
-    "additionalProperties": false
-  },
-  "output_schema": {
-    "type": "object",
-    "properties": {
-      "status": {"type": "string", "enum": ["success", "partial_success", "missing_params", "failed"]},
-      "data": {"type": "object"},
-      "summary": {"type": "string"},
-      "missing_params": {"type": "array", "items": {"type": "string"}},
-      "error": {"type": ["string", "null"]}
-    },
-    "required": ["status", "data", "summary", "missing_params", "error"],
-    "additionalProperties": false
   }
 }
 ```
 
-### 7.4 增加响应映射
+当前 `ApiSkillAdapter` 支持：
 
-如果 API 响应不是统一结构，需要在 `runtime/tools/skill_adapters.py` 中增加 `response_mapping.kind` 对应的转换逻辑。
+```text
+GET
+POST
+query auth
+response_mapping.kind
+```
 
-要求：
+当前已实现的高德映射：
 
-- 不把原始响应全量直接返回给用户。
-- 不泄露 API Key。
-- 网络错误转换为结构化异常或 `failed`。
+```text
+amap_geocode
+amap_weather
+amap_route_driving
+amap_generic
+```
+
+如果新增 API 响应结构无法直接使用，需要在：
+
+```text
+runtime/tools/skill_adapters.py
+```
+
+补充新的 `response_mapping.kind`。
+
+### 8.3 API Skill 要求
+
+- 鉴权来自 `.env`。
+- API Key 不进入 `SKILL.md`、`schema.json`、`tool_call.input_payload`、AG-UI 事件。
+- 外部接口失败要转成统一结构。
 - 可恢复业务失败返回 `partial_success` 或 `missing_params`。
-
-### 7.5 验证
-
-必须验证：
-
-- 缺少必填字段时返回 `missing_params`。
-- 正常响应能通过 output_schema。
-- API Key 不出现在 `tool_call.input_payload`。
-- API Key 不出现在 AG-UI 事件。
+- 不把原始响应全量交给最终用户。
 
 ---
 
-## 八、Code Skill SOP
+## 九、Code Skill SOP
 
 Code Skill 适合本地确定性处理。
 
@@ -275,7 +333,7 @@ Code Skill 适合本地确定性处理。
 - 轻量计算。
 - 模板渲染。
 
-### 8.1 创建 Skill 资产
+### 9.1 创建 Skill 资产
 
 ```text
 agents/main/skills/content_extract/
@@ -283,7 +341,7 @@ agents/main/skills/content_extract/
 └── schema.json
 ```
 
-`schema.json` 中 executor：
+`schema.json` 中：
 
 ```json
 {
@@ -294,7 +352,7 @@ agents/main/skills/content_extract/
 }
 ```
 
-### 8.2 编写本地执行器
+### 9.2 编写内置执行器
 
 代码放在：
 
@@ -306,9 +364,10 @@ runtime/tools/builtin_skills/
 
 ```text
 runtime/tools/builtin_skills/content_extract.py
+runtime/tools/builtin_skills/travel_briefing_formatter.py
 ```
 
-执行器必须继承或遵循 `BaseCodeSkill`：
+执行器必须遵循 `BaseCodeSkill`：
 
 ```python
 class ContentExtractSkill(BaseCodeSkill):
@@ -324,7 +383,7 @@ class ContentExtractSkill(BaseCodeSkill):
         }
 ```
 
-### 8.3 注册执行器
+### 9.3 注册执行器
 
 在：
 
@@ -340,20 +399,20 @@ CODE_SKILL_EXECUTORS = {
 }
 ```
 
-### 8.4 限制
+### 9.4 Code Skill 限制
 
 - 不从 Skill 资产目录动态 import Python 文件。
 - 不执行用户上传代码。
-- 不在 Code Skill 里调用未声明外部服务。
+- 不在 Code Skill 里调用未声明的外部服务。
 - 不把最终回答逻辑写进 Code Skill。
 
 ---
 
-## 九、Chain Skill SOP
+## 十、Chain Skill SOP
 
 Chain Skill 适合组合多个已有 Skill，形成稳定业务链路。
 
-示例：
+当前示例：
 
 ```text
 amap_route_weather_plan
@@ -362,14 +421,14 @@ amap_route_weather_plan
 链路：
 
 ```text
-amap_geocode
-→ amap_geocode
+amap_geocode(origin)
+→ amap_geocode(destination)
 → amap_route_driving
 → amap_weather
 → travel_briefing_formatter
 ```
 
-### 9.1 创建 Skill 资产
+### 10.1 创建 Skill 资产
 
 ```text
 agents/workers/amap_worker/skills/amap_route_weather_plan/
@@ -377,7 +436,7 @@ agents/workers/amap_worker/skills/amap_route_weather_plan/
 └── schema.json
 ```
 
-`schema.json` 中 executor：
+`schema.json` 中：
 
 ```json
 {
@@ -388,35 +447,38 @@ agents/workers/amap_worker/skills/amap_route_weather_plan/
 }
 ```
 
-### 9.2 编写链路适配器
+### 10.2 编写链路适配器
 
-在：
+当前 Chain Skill 由：
 
 ```text
 runtime/tools/skill_adapters.py
 ```
 
-增加或扩展 ChainSkillAdapter。
+中的 `ChainSkillAdapter` 执行。
 
-要求：
+新增 chain 时需要：
 
-- 每一步调用已有 Skill。
-- 每一步结果必须结构化。
+- 增加 `chain_id` 分支。
+- 每一步通过 `execute_by_skill_id()` 调用已有 Skill。
+- 每一步仍走输入校验、输出校验和统一 ActionResult 转换。
 - 一步失败时返回结构化失败。
 - 不吞掉失败。
-- 不绕过 input_schema 和 output_schema。
 
-### 9.3 链路输入
+### 10.3 Chain 输入输出
 
-Chain Skill 输入只保留链路真正需要的参数。
+输入只保留链路真正需要的参数。
 
-必填字段必须来自用户显式输入、会话上下文或上游执行结果。
+必填字段必须来自：
 
-不要让模型用假设值补齐必填字段。
+- 用户显式输入。
+- 当前 session context。
+- event dialogues。
+- previous_action_result。
+- action_history。
+- 上游 Skill 输出。
 
-### 9.4 链路输出
-
-Chain Skill 输出建议包含：
+输出建议：
 
 ```json
 {
@@ -433,33 +495,56 @@ Chain Skill 输出建议包含：
 
 ---
 
-## 十、变更检查清单
+## 十一、测试要求
 
-新增或修改 Skill 后，必须检查：
+新增或修改 Skill 后至少验证：
+
+- SkillRegistry 能扫描加载。
+- `schema.json` 可解析。
+- `input_schema` 缺参时返回 `missing_params`。
+- 正常输入能返回统一输出结构。
+- 输出能通过 `output_schema`。
+- `tool_call` 可写入。
+- Harness 能消费 Skill 结果。
+- AG-UI 能展示 Skill 调用步骤。
+- API Key 不泄露。
+- 没有为了测试写死用户问题或关键词。
+
+领域 Skill 还需要跑：
+
+```text
+main → worker → skill → Harness → main answer_user
+```
+
+---
+
+## 十二、变更检查清单
 
 - [ ] 目录名等于 `skill_id`。
-- [ ] `SKILL.md` 非空。
+- [ ] `SKILL.md` 非空且边界清晰。
 - [ ] `schema.json` 可解析。
 - [ ] `executor.type` 正确。
 - [ ] `input_schema.required` 合理。
 - [ ] `output_schema` 校验统一输出结构。
 - [ ] API Key 不进入资产文件。
+- [ ] API Skill 有 response mapping 或可接受通用映射。
 - [ ] Code Skill 已注册。
 - [ ] Chain Skill 每一步都有失败处理。
-- [ ] 已补充对应测试用例。
-- [ ] 没有为了测试写死用户问题或关键词。
+- [ ] 已补充测试用例。
+- [ ] 未在代码或提示词中为测试效果写死规则。
 
 ---
 
-## 十一、推荐实施顺序
+## 十三、推荐实施顺序
 
 1. 判断 Skill 应归属 main 还是 worker。
-2. 创建 Skill 目录。
-3. 编写 `SKILL.md`。
-4. 编写 `schema.json`。
-5. 根据类型补 Adapter 或 builtin executor。
-6. 跑资产加载测试。
-7. 跑输入缺参测试。
-8. 跑正常调用测试。
-9. 跑 Agent Loop 测试。
-10. 跑 AG-UI 流式测试。
+2. 判断 Skill 类型：`api / code / chain`。
+3. 创建 Skill 目录。
+4. 编写 `SKILL.md`。
+5. 编写 `schema.json`。
+6. 根据类型补 Adapter 或 builtin executor。
+7. 跑资产加载测试。
+8. 跑输入缺参测试。
+9. 跑正常调用测试。
+10. 跑 Agent Loop 测试。
+11. 跑 AG-UI 流式测试。
