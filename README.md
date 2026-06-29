@@ -618,15 +618,54 @@ docs/技术方案/技术债务.md
 
 ## 部署状态
 
-当前仓库尚未补齐 `deployment/` 目录。
+当前仓库已提供后端专用 `Dockerfile`。
 
-部署阶段待补：
+该镜像只包含后端运行所需内容：
 
-- `deployment/Dockerfile`
-- `deployment/docker-compose.yaml`
-- 后端服务启动说明
-- PostgreSQL 启动说明
-- 环境变量说明
-- 生产日志和排查说明
+- `app.py`
+- `agents/`
+- `exception/`
+- `runtime/`
+- `schema/`
+- `utils/`
+- `web/`
+- `requirements.txt`
 
-本地开发请先使用 README 中的本地启动方式。
+不会打包：
+
+- `ui/`
+- `.env`
+- `docs/`
+- `logs/`
+- `.git/`
+- `.idea/`
+
+构建后端镜像：
+
+```bash
+docker build -t agent-base-backend .
+```
+
+启动后端容器：
+
+```bash
+docker run --rm -p 8003:8003 --env-file .env agent-base-backend
+```
+
+容器内服务监听：
+
+```text
+0.0.0.0:8003
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8003/health
+```
+
+注意：
+
+- `.env` 不会进入镜像，只能通过 `--env-file`、Kubernetes Secret 或业务系统部署平台注入。
+- `DATABASE_URL` 在容器中不能使用宿主机视角的 `127.0.0.1`，需要改成容器可访问的 PostgreSQL 地址。
+- `deployment/docker-compose.yaml` 仍未补齐。
