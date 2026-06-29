@@ -9,6 +9,10 @@ from runtime.agents.loader import AgentLoader
 from runtime.context.assembler import ContextAssembler
 from runtime.context.event_preloader import EventContextPreloader
 from runtime.events.manager import EventManager
+from runtime.failure_message import (
+    build_exception_failure_message,
+    exception_reason,
+)
 from runtime.harness.evaluator import LLMHarnessEvaluator
 from runtime.hooks.events import (
     ConversationTurnCompletedEvent,
@@ -191,7 +195,11 @@ class RuntimeEngine:
                         if agui_adapter
                         else None,
                     )
-                next_state = self._resolve_next_state(decision, feedback)
+                next_state = self._resolve_next_state(
+                    state_before,
+                    decision,
+                    feedback,
+                )
                 action_history.append(
                     self._build_action_history_item(
                         step_index,
@@ -250,8 +258,12 @@ class RuntimeEngine:
                     feedback,
                     result,
                 )
+                if next_state == LoopState.FAILED:
+                    pending_action = None
+                    missing_params = []
                 session_state.state = next_state.value
                 session_state.missing_params = missing_params
+                session_state.pending_action = None
                 if pending_action:
                     session_state.pending_action = {
                         "action": pending_action.action.value,
@@ -267,7 +279,12 @@ class RuntimeEngine:
                     final_question = result.question
                     break
                 if next_state == LoopState.FAILED:
-                    break
+                    if state_before == LoopState.FAILED and decision.action == LoopAction.ANSWER_USER:
+                        final_answer = result.answer
+                        final_data = result.data
+                        final_summary = result.summary
+                        break
+                    continue
             else:
                 raise BizErrorCode.STATE_ERROR.exception("超过最大 Loop 步数")
             await self.state_manager.flush_boundary_state(
@@ -314,7 +331,14 @@ class RuntimeEngine:
                 summary=final_summary,
             )
         except Exception as exc:
-            await self._finish_agent_run(run, LoopState.FAILED, None, str(exc))
+            failure_answer = build_exception_failure_message(exc)
+            failure_reason = exception_reason(exc)
+            await self._finish_agent_run(
+                run,
+                LoopState.FAILED,
+                failure_answer,
+                failure_reason,
+            )
             if request.agent_id == event.root_agent_id:
                 event = await self.event_manager.update_status(event, LoopState.FAILED)
                 self._request_event_summary_if_needed(
@@ -322,13 +346,42 @@ class RuntimeEngine:
                     request,
                     LoopState.FAILED,
                 )
+            self._request_conversation_turn_completed(
+                run.id,
+                event.event_id,
+                request,
+                session_state.session_id,
+                LoopState.FAILED,
+                failure_answer,
+                None,
+                None,
+            )
+            await self._emit_message(
+                agui_adapter,
+                run.id,
+                session_state.session_id,
+                failure_answer,
+            )
             await self._emit_agui(
                 agui_adapter,
-                agui_adapter.run_error(run.id, session_state.session_id, "服务暂时无法完成请求")
+                agui_adapter.run_error(
+                    run.id,
+                    session_state.session_id,
+                    failure_reason,
+                )
                 if agui_adapter
                 else None,
             )
-            raise
+            return RuntimeResult(
+                request_id=request.request_id,
+                session_id=session_state.session_id,
+                run_id=run.id,
+                state=LoopState.FAILED,
+                answer=failure_answer,
+                question=None,
+                data={},
+                summary=failure_reason,
+            )
 
     def _request_conversation_turn_completed(
         self,
@@ -473,6 +526,7 @@ class RuntimeEngine:
 
     def _resolve_next_state(
         self,
+        current_state: LoopState,
         decision: ActionDecision,
         feedback: HarnessFeedback | None,
     ) -> LoopState:
@@ -480,6 +534,7 @@ class RuntimeEngine:
         计算下一状态。
 
         Args:
+            current_state (LoopState): 当前状态。
             decision (ActionDecision): Action 决策。
             feedback (HarnessFeedback | None): Harness 反馈。
 
@@ -488,7 +543,10 @@ class RuntimeEngine:
         """
         if feedback:
             return feedback.state
-        return self.state_manager.next_state_for_direct_action(decision.action)
+        return self.state_manager.next_state_for_direct_action(
+            current_state,
+            decision.action,
+        )
 
     def _build_action_history_item(
         self,
@@ -659,10 +717,35 @@ class RuntimeEngine:
         content = result.question
         if not content:
             return
+        await self._emit_message(agui_adapter, run_id, session_id, content)
+
+    async def _emit_message(
+        self,
+        agui_adapter: AGUIEventAdapter | None,
+        run_id: str,
+        session_id: str,
+        content: str | None,
+    ) -> None:
+        """
+        输出一条完整的 AG-UI assistant 文本消息。
+
+        Args:
+            agui_adapter (AGUIEventAdapter | None): AG-UI 适配器。
+            run_id (str): 运行 ID。
+            session_id (str): 会话 ID。
+            content (str | None): 消息内容。
+        """
+        if not agui_adapter:
+            return
+        normalized = str(content or "").strip()
+        if not normalized:
+            return
         message_id = agui_adapter.new_message_id()
-        await agui_adapter.emit(agui_adapter.text_message_start(run_id, session_id, message_id))
         await agui_adapter.emit(
-            agui_adapter.text_message_content(run_id, session_id, message_id, content)
+            agui_adapter.text_message_start(run_id, session_id, message_id)
+        )
+        await agui_adapter.emit(
+            agui_adapter.text_message_content(run_id, session_id, message_id, normalized)
         )
         await agui_adapter.emit(agui_adapter.text_message_end(run_id, session_id, message_id))
 

@@ -39,9 +39,10 @@ class LLMLoopDecider:
         """
         system_prompt = self._build_system_prompt(context)
         user_prompt = self._build_user_prompt(state, context)
+        allowed_actions = self._allowed_actions(state, context)
         raw = await self.llm_client.chat_text(system_prompt, user_prompt, max_tokens=2500)
         payload = parse_json_object(raw)
-        return self._parse_decision(payload)
+        return self._parse_decision(payload, allowed_actions)
 
     def _build_system_prompt(self, context: RuntimeContext) -> str:
         """
@@ -73,6 +74,7 @@ class LLMLoopDecider:
             f"{worker_rule}"
             "如果信息不足，可以选择 ask_user；如果可以直接回答，选择 answer_user。"
             "如果当前状态是 missing_params 或 awaiting_user，需要先判断用户补充是否已经足够继续 call_skill 或 call_agent。"
+            "如果当前状态是 failed，说明执行层已经失败，本轮只允许选择 answer_user，向用户解释失败原因、这是不是输入问题、以及下一步建议。"
             "如果 Harness 或 previous_action_result 已经明确给出追问内容，优先原样或轻微润色后选择 ask_user，不要改成 failed。"
             "如果上一轮执行层成功，但 Harness 判断为 semantic_mismatch 或 insufficient_information，需要通过 ask_user 消除歧义，不要直接宣告失败。"
             "必须只输出 JSON 对象，不要输出 Markdown。"
@@ -93,7 +95,7 @@ class LLMLoopDecider:
             f"## {name}\n{content}"
             for name, content in context.agent_definition.files.items()
         )
-        allowed_actions = self._allowed_actions(context)
+        allowed_actions = self._allowed_actions(state, context)
         payload = {
             "current_state": state.value,
             "user_message": context.request.message,
@@ -130,16 +132,19 @@ class LLMLoopDecider:
             f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
 
-    def _allowed_actions(self, context: RuntimeContext) -> list[str]:
+    def _allowed_actions(self, state: LoopState, context: RuntimeContext) -> list[str]:
         """
         获取当前 Agent 允许的 Action。
 
         Args:
+            state (LoopState): 当前状态。
             context (RuntimeContext): Runtime 上下文。
 
         Returns:
             list[str]: Action 列表。
         """
+        if state == LoopState.FAILED:
+            return [LoopAction.ANSWER_USER.value]
         actions = [
             LoopAction.ANSWER_USER.value,
             LoopAction.CALL_SKILL.value,
@@ -149,12 +154,17 @@ class LLMLoopDecider:
             actions.insert(2, LoopAction.CALL_AGENT.value)
         return actions
 
-    def _parse_decision(self, payload: dict) -> ActionDecision:
+    def _parse_decision(
+        self,
+        payload: dict,
+        allowed_actions: list[str],
+    ) -> ActionDecision:
         """
         解析模型决策。
 
         Args:
             payload (dict): 模型 JSON 输出。
+            allowed_actions (list[str]): 当前允许的动作。
 
         Returns:
             ActionDecision: Action 决策。
@@ -163,6 +173,8 @@ class LLMLoopDecider:
             action = LoopAction(payload["action"])
         except (KeyError, ValueError) as exc:
             raise BizErrorCode.ACTION_PARSE_ERROR.exception("Loop Action 非法") from exc
+        if action.value not in allowed_actions:
+            raise BizErrorCode.ACTION_PARSE_ERROR.exception("当前状态下不允许该 Action")
         action_detail = payload.get("action_detail") or {}
         if not isinstance(action_detail, dict):
             raise BizErrorCode.ACTION_PARSE_ERROR.exception("action_detail 必须是对象")

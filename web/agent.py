@@ -3,7 +3,9 @@ from uuid import uuid4
 from fastapi import APIRouter
 
 from runtime.engine import RuntimeEngine
+from runtime.failure_message import build_exception_failure_message
 from runtime.models import RuntimeRequest
+from runtime.state.types import LoopState
 from schema.api.agent import AgentRunRequest, AgentRunResponse
 from schema.api.common import BaseResponse
 
@@ -30,7 +32,20 @@ async def run_agent(request: AgentRunRequest) -> BaseResponse[AgentRunResponse]:
         message=request.message,
         metadata=request.metadata,
     )
-    result = await RuntimeEngine().run(runtime_request)
+    try:
+        result = await RuntimeEngine().run(runtime_request)
+    except Exception as exc:
+        failure_answer = build_exception_failure_message(exc)
+        response = AgentRunResponse(
+            request_id=request_id,
+            session_id=request.session_id or "",
+            run_id=request_id,
+            state=LoopState.FAILED.value,
+            answer=failure_answer,
+            need_user_input=False,
+            question=None,
+        )
+        return BaseResponse(data=response)
     response = AgentRunResponse(
         request_id=result.request_id,
         session_id=result.session_id,

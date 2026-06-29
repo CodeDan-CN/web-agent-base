@@ -99,6 +99,7 @@ class ActionExecutor:
         system_prompt = (
             "你是当前 Agent 的最终回答生成器。"
             "请根据用户请求、Agent 文件、上下文和上一轮执行结果自然回答。"
+            "如果当前状态是 failed，请明确告诉用户哪一步失败了、原因是什么、这是不是输入问题、以及下一步建议。"
             "不要暴露 State、Action、mock、测试、Harness 等内部实现细节。"
         )
         user_prompt = self._build_answer_prompt(context, decision)
@@ -281,9 +282,11 @@ class ActionExecutor:
         )
         return (
             f"Agent 文件：\n{files}\n\n"
+            f"当前状态：{context.session_state.state}\n\n"
             f"用户请求：{context.request.message}\n\n"
             f"请求元数据：{remove_event_identifiers(context.request.metadata)}\n\n"
             f"会话上下文：{context.session_context}\n\n"
+            f"Harness 反馈：{context.harness_feedback}\n\n"
             f"上一轮执行结果：{previous_result}\n\n"
             f"回答要求：{decision.action_detail.get('answer_instruction', '')}"
         )

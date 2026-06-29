@@ -643,13 +643,23 @@ docs/技术方案/技术债务.md
 构建后端镜像：
 
 ```bash
-docker build -t agent-base-backend .
+docker build --platform linux/amd64 -t agent-base-backend .
 ```
 
 启动后端容器：
 
 ```bash
 docker run --rm -p 8003:8003 --env-file .env agent-base-backend
+```
+
+如果本地 PostgreSQL 运行在宿主机或另一个暴露到宿主机的容器中，Mac Docker Desktop 可这样覆盖数据库地址：
+
+```bash
+docker run --rm \
+  -p 8003:8003 \
+  --env-file .env \
+  -e DATABASE_URL=postgresql+psycopg://postgres:postgres@host.docker.internal:5432/agent_base \
+  agent-base-backend
 ```
 
 容器内服务监听：
@@ -667,5 +677,5 @@ curl http://127.0.0.1:8003/health
 注意：
 
 - `.env` 不会进入镜像，只能通过 `--env-file`、Kubernetes Secret 或业务系统部署平台注入。
-- `DATABASE_URL` 在容器中不能使用宿主机视角的 `127.0.0.1`，需要改成容器可访问的 PostgreSQL 地址。
+- `DATABASE_URL` 在容器中不能使用宿主机视角的 `127.0.0.1`，需要改成容器可访问的 PostgreSQL 地址，例如 Docker Desktop 的 `host.docker.internal`、同一 Docker 网络内的数据库服务名，或业务部署平台提供的数据库域名。
 - `deployment/docker-compose.yaml` 仍未补齐。

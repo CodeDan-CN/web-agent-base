@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from runtime.ag_ui.adapter import AGUIEventAdapter
 from runtime.engine import RuntimeEngine
+from runtime.failure_message import build_exception_failure_message, exception_reason
 from runtime.models import RuntimeRequest
 from schema.api.agent import AgentRunRequest
 
@@ -50,6 +51,22 @@ async def run_agent_stream(request: AgentRunRequest) -> StreamingResponse:
         """
         try:
             await RuntimeEngine().run(runtime_request, AGUIEventAdapter(emit))
+        except Exception as exc:
+            adapter = AGUIEventAdapter(emit)
+            thread_id = runtime_request.session_id or ""
+            message_id = adapter.new_message_id()
+            failure_answer = build_exception_failure_message(exc)
+            await emit(adapter.text_message_start(request_id, thread_id, message_id))
+            await emit(
+                adapter.text_message_content(
+                    request_id,
+                    thread_id,
+                    message_id,
+                    failure_answer,
+                )
+            )
+            await emit(adapter.text_message_end(request_id, thread_id, message_id))
+            await emit(adapter.run_error(request_id, thread_id, exception_reason(exc)))
         finally:
             await queue.put(None)
 

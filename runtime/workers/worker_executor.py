@@ -348,9 +348,14 @@ class WorkerExecutor:
                 data=data,
                 summary=worker_result.summary or "Worker 已返回处理结果",
             )
+        worker_failure_reason = (
+            worker_result.summary
+            or worker_result.answer
+            or "Worker 未返回答案或追问"
+        )
         return ActionResult(
             status="failed",
             data=data,
-            summary="Worker 未能完成任务",
-            error="Worker 未返回答案或追问",
+            summary=worker_result.summary or "Worker 未能完成任务",
+            error=worker_failure_reason,
         )

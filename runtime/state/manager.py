@@ -60,16 +60,23 @@ class StateManager:
             return LoopState.AWAITING_USER
         return LoopState.NEW_REQUEST
 
-    def next_state_for_direct_action(self, action: LoopAction) -> LoopState:
+    def next_state_for_direct_action(
+        self,
+        current_state: LoopState,
+        action: LoopAction,
+    ) -> LoopState:
         """
         计算不进入 Harness 的 Action 下一状态。
 
         Args:
+            current_state (LoopState): 当前状态。
             action (LoopAction): Action。
 
         Returns:
             LoopState: 下一状态。
         """
+        if current_state == LoopState.FAILED and action == LoopAction.ANSWER_USER:
+            return LoopState.FAILED
         if action == LoopAction.ANSWER_USER:
             return LoopState.COMPLETED
         if action == LoopAction.ASK_USER:

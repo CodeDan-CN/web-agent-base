@@ -507,7 +507,7 @@ class AGUIEventAdapter:
         if feedback.state == LoopState.MISSING_PARAMS:
             return {"phase": "need_more_info", "label": "还需要补充信息"}
         if feedback.state == LoopState.FAILED:
-            return {"phase": "failed", "label": "无法继续完成"}
+            return {"phase": "failed", "label": "这一步执行失败，正在整理原因"}
         if decision.action == LoopAction.CALL_SKILL:
             return {"phase": "tool_result_ready", "label": "能力调用已完成，正在组织回答"}
         return {"phase": "tool_result_ready", "label": "Worker 结果已返回，正在组织回答"}
