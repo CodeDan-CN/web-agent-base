@@ -4,7 +4,8 @@
   "description": "调用高德公交路径规划接口，根据起终点经纬度和城市查询公共交通路线。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/direction/transit/integrated",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/direction/transit/integrated",
     "method": "GET",
     "auth": {
       "type": "query",

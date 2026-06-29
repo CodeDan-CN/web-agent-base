@@ -4,7 +4,8 @@
   "description": "调用高德行政区域查询接口，获取行政区编码和层级信息。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/config/district",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/config/district",
     "method": "GET",
     "auth": {
       "type": "query",

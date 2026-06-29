@@ -269,10 +269,11 @@ agents/workers/amap_worker/skills/amap_geocode/
 
 ```json
 {
-  "executor": {
-    "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/geocode/geo",
-    "method": "GET",
+    "executor": {
+      "type": "api",
+      "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+      "endpoint": "/v3/geocode/geo",
+      "method": "GET",
     "auth": {
       "type": "query",
       "param": "key",
@@ -291,9 +292,63 @@ agents/workers/amap_worker/skills/amap_geocode/
 ```text
 GET
 POST
+PUT
+DELETE
 query auth
+base_url_env + endpoint
+path_params
+body_context_fields
 response_mapping.kind
 ```
+
+API Skill 必须使用 `base_url_env + endpoint` 组装完整请求地址：
+
+```json
+{
+  "executor": {
+    "type": "api",
+    "base_url_env": "BUSINESS_API_BASE_URL",
+    "endpoint": "/v1/nodes/{node_id}",
+    "method": "PUT"
+  }
+}
+```
+
+路径模板参数通过 `path_params` 声明。
+
+如果参数来自 Skill 输入：
+
+```json
+{
+  "path_params": ["node_id"]
+}
+```
+
+如果参数来自 Runtime context：
+
+```json
+{
+  "path_params": {
+    "node_id": "request.metadata.node_id"
+  }
+}
+```
+
+路径参数在组装 URL 后会从 query/body 参数中消费，不会重复进入请求参数。
+
+`body_context_fields` 用于从 Runtime context 注入 body 字段：
+
+```json
+{
+  "body_context_fields": {
+    "user_id": "request.user_id",
+    "session_id": "request.session_id",
+    "source_system": "request.metadata.source_system"
+  }
+}
+```
+
+当 `path_params` 或 `body_context_fields` 依赖的字段缺失时，Adapter 必须返回统一 `missing_params` 结果，不抛业务异常，也不把这些字段留给模型自由填写。
 
 当前已实现的高德映射：
 
@@ -302,6 +357,32 @@ amap_geocode
 amap_weather
 amap_route_driving
 amap_generic
+backend_envelope
+```
+
+`backend_envelope` 用于映射业务系统常见的 `BaseResponse{code,msg,data}`：
+
+```json
+{
+  "response_mapping": {
+    "kind": "backend_envelope",
+    "success_code": 200
+  }
+}
+```
+
+如业务系统字段名不同，可以声明：
+
+```json
+{
+  "response_mapping": {
+    "kind": "backend_envelope",
+    "code_field": "code",
+    "msg_field": "msg",
+    "data_field": "data",
+    "success_codes": [0, 200]
+  }
+}
 ```
 
 如果新增 API 响应结构无法直接使用，需要在：

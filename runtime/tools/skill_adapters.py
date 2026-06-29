@@ -1,5 +1,7 @@
 import os
+import re
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
@@ -61,6 +63,8 @@ class ApiSkillAdapter(BaseSkillAdapter):
     HTTP API Skill Adapter。
     """
 
+    body_methods = {"POST", "PUT"}
+
     async def execute(
         self,
         skill: SkillDefinition,
@@ -74,38 +78,260 @@ class ApiSkillAdapter(BaseSkillAdapter):
         """
         api_payload = dict(payload)
         settings = get_settings()
-        self._apply_auth(skill, api_payload)
         timeout_ms = int(
             skill.executor.get("timeout_ms")
             or settings.skill_api_timeout_ms
         )
+        request_spec = self._build_request_spec(skill, api_payload, context)
+        if request_spec.get("missing_params"):
+            return self._missing_params_result(
+                request_spec["missing_params"],
+                "API Skill 缺少运行时上下文字段",
+            )
         async with httpx.AsyncClient(timeout=timeout_ms / 1000) as client:
-            response = await self._request(client, skill, api_payload)
+            response = await self._request(client, request_spec)
         return self._map_response(skill, response.json())
+
+    def _build_request_spec(
+        self,
+        skill: SkillDefinition,
+        payload: dict[str, Any],
+        context: RuntimeContext,
+    ) -> dict[str, Any]:
+        """
+        构建 HTTP 请求规格。
+        """
+        method = str(skill.executor.get("method") or "GET").upper()
+        if method not in {"GET", "POST", "PUT", "DELETE"}:
+            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception(
+                f"API Skill method 不支持: {method}"
+            )
+        url_result = self._build_url(skill, payload, context)
+        missing_params = list(url_result.get("missing_params") or [])
+        request_payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in set(url_result.get("consumed_params") or [])
+        }
+        query_params: dict[str, Any] = {}
+        body_payload: dict[str, Any] = {}
+        if method in self.body_methods:
+            body_payload = dict(request_payload)
+            body_missing = self._inject_body_context_fields(
+                skill,
+                body_payload,
+                payload,
+                context,
+            )
+            missing_params.extend(body_missing)
+        else:
+            query_params = dict(request_payload)
+        self._apply_auth(skill, query_params)
+        return {
+            "method": method,
+            "url": url_result.get("url", ""),
+            "query_params": query_params,
+            "body": body_payload,
+            "missing_params": missing_params,
+        }
 
     async def _request(
         self,
         client: httpx.AsyncClient,
-        skill: SkillDefinition,
-        payload: dict[str, Any],
+        request_spec: dict[str, Any],
     ) -> httpx.Response:
         """
         发起 HTTP 请求。
         """
-        method = str(skill.executor.get("method") or "GET").upper()
-        endpoint = str(skill.executor.get("endpoint") or "")
-        if not endpoint:
-            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception("API Skill 缺少 endpoint")
+        method = str(request_spec.get("method") or "GET")
+        url = str(request_spec.get("url") or "")
         if method == "GET":
-            response = await client.get(endpoint, params=payload)
+            response = await client.get(url, params=request_spec.get("query_params") or {})
         elif method == "POST":
-            response = await client.post(endpoint, json=payload)
+            response = await client.post(
+                url,
+                params=request_spec.get("query_params") or {},
+                json=request_spec.get("body") or {},
+            )
+        elif method == "PUT":
+            response = await client.put(
+                url,
+                params=request_spec.get("query_params") or {},
+                json=request_spec.get("body") or {},
+            )
+        elif method == "DELETE":
+            response = await client.delete(url, params=request_spec.get("query_params") or {})
         else:
             raise BizErrorCode.ACTION_EXECUTE_ERROR.exception(
                 f"API Skill method 不支持: {method}"
             )
         response.raise_for_status()
         return response
+
+    def _build_url(
+        self,
+        skill: SkillDefinition,
+        payload: dict[str, Any],
+        context: RuntimeContext,
+    ) -> dict[str, Any]:
+        """
+        组装请求地址并替换路径模板参数。
+        """
+        endpoint = str(skill.executor.get("endpoint") or "")
+        if not endpoint:
+            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception("API Skill 缺少 endpoint")
+        base_url_env = str(skill.executor.get("base_url_env") or "")
+        if not base_url_env:
+            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception("API Skill 缺少 base_url_env")
+        base_url = os.getenv(base_url_env, "")
+        if not base_url:
+            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception(
+                f"缺少环境变量: {base_url_env}"
+            )
+        url = urljoin(f"{base_url.rstrip('/')}/", endpoint.lstrip("/"))
+        path_params = skill.executor.get("path_params") or {}
+        missing_params: list[str] = []
+        consumed_params: list[str] = []
+
+        def replace(match: re.Match[str]) -> str:
+            name = match.group(1)
+            source = self._path_param_source(path_params, name)
+            value = self._resolve_field(source, payload, context)
+            if self._is_missing(value):
+                missing_params.append(name)
+                return match.group(0)
+            consumed_name = self._consumed_payload_name(source, name)
+            if consumed_name:
+                consumed_params.append(consumed_name)
+            return str(value)
+
+        url = re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", replace, url)
+        return {
+            "url": url,
+            "missing_params": sorted(set(missing_params)),
+            "consumed_params": sorted(set(consumed_params)),
+        }
+
+    def _path_param_source(self, path_params: Any, name: str) -> str:
+        """
+        获取路径模板参数的数据来源。
+        """
+        if isinstance(path_params, dict):
+            return str(path_params.get(name) or f"payload.{name}")
+        if isinstance(path_params, list) and name in path_params:
+            return f"payload.{name}"
+        return f"payload.{name}"
+
+    def _inject_body_context_fields(
+        self,
+        skill: SkillDefinition,
+        body_payload: dict[str, Any],
+        payload: dict[str, Any],
+        context: RuntimeContext,
+    ) -> list[str]:
+        """
+        从 Runtime context 注入字段到请求 body。
+        """
+        fields = skill.executor.get("body_context_fields") or {}
+        missing_params: list[str] = []
+        if isinstance(fields, dict):
+            items = fields.items()
+        elif isinstance(fields, list):
+            items = [
+                (self._field_name_from_source(str(source)), str(source))
+                for source in fields
+            ]
+        else:
+            raise BizErrorCode.ACTION_EXECUTE_ERROR.exception(
+                "body_context_fields 必须是对象或数组"
+            )
+        for body_field, source in items:
+            target_field = str(body_field)
+            source_path = str(source)
+            value = self._resolve_field(source_path, payload, context)
+            if self._is_missing(value):
+                missing_params.append(target_field)
+                continue
+            body_payload[target_field] = value
+        return sorted(set(missing_params))
+
+    def _field_name_from_source(self, source: str) -> str:
+        """
+        从 source path 推导 body 字段名。
+        """
+        return source.split(".")[-1] if source else source
+
+    def _resolve_field(
+        self,
+        source: str,
+        payload: dict[str, Any],
+        context: RuntimeContext,
+    ) -> Any:
+        """
+        从 payload 或 Runtime context 读取字段。
+        """
+        source = source.strip()
+        if not source:
+            return None
+        if "." not in source:
+            value = payload.get(source)
+            if not self._is_missing(value):
+                return value
+            value = context.request.metadata.get(source)
+            if not self._is_missing(value):
+                return value
+            return context.session_context.get(source)
+        root, _, path = source.partition(".")
+        roots = {
+            "payload": payload,
+            "metadata": context.request.metadata,
+            "request": {
+                "user_id": context.request.user_id,
+                "agent_id": context.request.agent_id,
+                "session_id": context.request.session_id,
+                "request_id": context.request.request_id,
+                "metadata": context.request.metadata,
+            },
+            "session_context": context.session_context,
+            "previous_action_result": (
+                context.previous_action_result.to_dict()
+                if context.previous_action_result
+                else {}
+            ),
+        }
+        return self._dig(roots.get(root, {}), path)
+
+    def _dig(self, value: Any, path: str) -> Any:
+        """
+        按点路径读取嵌套字段。
+        """
+        current = value
+        for part in [item for item in path.split(".") if item]:
+            if isinstance(current, dict):
+                current = current.get(part)
+            else:
+                current = getattr(current, part, None)
+            if current is None:
+                return None
+        return current
+
+    def _consumed_payload_name(self, source: str, name: str) -> str:
+        """
+        获取需要从 payload 中消费的路径参数字段。
+        """
+        if source == name:
+            return name
+        prefix = "payload."
+        if source.startswith(prefix):
+            payload_path = source[len(prefix):]
+            return payload_path.split(".", 1)[0]
+        return ""
+
+    def _is_missing(self, value: Any) -> bool:
+        """
+        判断运行时字段是否缺失。
+        """
+        return value is None or value == ""
 
     def _apply_auth(self, skill: SkillDefinition, payload: dict[str, Any]) -> None:
         """
@@ -136,6 +362,8 @@ class ApiSkillAdapter(BaseSkillAdapter):
             return self._map_amap_route_driving(response)
         if kind == "amap_generic":
             return self._map_amap_generic(response)
+        if kind == "backend_envelope":
+            return self._map_backend_envelope(skill, response)
         return {
             "status": "success",
             "data": response,
@@ -247,6 +475,41 @@ class ApiSkillAdapter(BaseSkillAdapter):
             str(response.get("info") or "高德接口调用完成"),
         )
 
+    def _map_backend_envelope(
+        self,
+        skill: SkillDefinition,
+        response: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        映射后端 BaseResponse 响应。
+        """
+        mapping = skill.executor.get("response_mapping") or {}
+        code_field = str(mapping.get("code_field") or "code")
+        msg_field = str(mapping.get("msg_field") or "msg")
+        data_field = str(mapping.get("data_field") or "data")
+        code = response.get(code_field)
+        success_codes = mapping.get("success_codes")
+        if success_codes is None:
+            success_codes = [mapping.get("success_code", 200)]
+        elif not isinstance(success_codes, list):
+            success_codes = [success_codes]
+        normalized_codes = {str(item) for item in success_codes}
+        message = str(response.get(msg_field) or "")
+        data = response.get(data_field)
+        if str(code) not in normalized_codes:
+            error = message or "后端接口返回失败"
+            return {
+                "status": "failed",
+                "data": {"raw": response},
+                "summary": error,
+                "missing_params": [],
+                "error": error,
+            }
+        return self._success(
+            data if isinstance(data, dict) else {"value": data},
+            message or "后端接口调用完成",
+        )
+
     def _map_amap_route_driving(self, response: dict[str, Any]) -> dict[str, Any]:
         """
         映射高德驾车路径规划响应。
@@ -310,6 +573,22 @@ class ApiSkillAdapter(BaseSkillAdapter):
             "data": data,
             "summary": summary,
             "missing_params": [],
+            "error": None,
+        }
+
+    def _missing_params_result(
+        self,
+        missing_params: list[str],
+        summary: str,
+    ) -> dict[str, Any]:
+        """
+        构造缺参结果。
+        """
+        return {
+            "status": "missing_params",
+            "data": {},
+            "summary": summary,
+            "missing_params": missing_params,
             "error": None,
         }
 

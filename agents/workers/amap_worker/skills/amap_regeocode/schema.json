@@ -4,7 +4,8 @@
   "description": "调用高德逆地理编码接口，将经纬度转换为结构化地址。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/geocode/regeo",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/geocode/regeo",
     "method": "GET",
     "auth": {
       "type": "query",

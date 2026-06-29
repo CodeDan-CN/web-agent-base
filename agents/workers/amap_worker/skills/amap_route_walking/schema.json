@@ -4,7 +4,8 @@
   "description": "调用高德步行路径规划接口，根据起终点经纬度查询步行路线。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/direction/walking",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/direction/walking",
     "method": "GET",
     "auth": {
       "type": "query",

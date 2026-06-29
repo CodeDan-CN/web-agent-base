@@ -4,7 +4,8 @@
   "description": "调用高德坐标转换接口，将其他坐标系转换为高德坐标。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/assistant/coordinate/convert",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/assistant/coordinate/convert",
     "method": "GET",
     "auth": {
       "type": "query",

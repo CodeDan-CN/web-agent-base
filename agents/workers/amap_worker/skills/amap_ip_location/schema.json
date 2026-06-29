@@ -4,7 +4,8 @@
   "description": "调用高德 IP 定位接口，根据 IPv4 地址查询大致城市位置。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/ip",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/ip",
     "method": "GET",
     "auth": {
       "type": "query",

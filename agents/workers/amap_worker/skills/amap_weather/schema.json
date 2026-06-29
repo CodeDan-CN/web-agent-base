@@ -4,7 +4,8 @@
   "description": "调用高德天气查询接口，根据 adcode 查询实时天气或天气预报。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/weather/weatherInfo",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/weather/weatherInfo",
     "method": "GET",
     "auth": {
       "type": "query",

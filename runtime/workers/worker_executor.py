@@ -154,20 +154,24 @@ class WorkerExecutor:
         from runtime.engine import RuntimeEngine
 
         message = self._worker_message(context, task_package)
-        worker_request = RuntimeRequest(
-            user_id=context.request.user_id,
-            agent_id=worker_id,
-            session_id=context.session_state.session_id,
-            request_id=f"{context.request.request_id}:{worker_id}:{uuid4().hex[:8]}",
-            message=str(message),
-            metadata={
+        worker_metadata = dict(context.request.metadata)
+        worker_metadata.update(
+            {
                 "runtime_role": "worker",
                 "parent_agent_id": context.request.agent_id,
                 "parent_request_id": context.request.request_id,
                 "parent_session_id": context.session_state.session_id,
                 "event_id": task_package.get("context_package", {}).get("event_id", ""),
                 "worker_task_package": task_package,
-            },
+            }
+        )
+        worker_request = RuntimeRequest(
+            user_id=context.request.user_id,
+            agent_id=worker_id,
+            session_id=context.session_state.session_id,
+            request_id=f"{context.request.request_id}:{worker_id}:{uuid4().hex[:8]}",
+            message=str(message),
+            metadata=worker_metadata,
         )
         worker_agui_adapter = self._worker_agui_adapter(
             parent_adapter=agui_adapter,

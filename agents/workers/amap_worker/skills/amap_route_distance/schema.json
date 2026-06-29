@@ -4,7 +4,8 @@
   "description": "调用高德距离测量接口，计算起点和终点坐标之间的距离。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/distance",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/distance",
     "method": "GET",
     "auth": {
       "type": "query",

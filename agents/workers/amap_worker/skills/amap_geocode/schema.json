@@ -4,7 +4,8 @@
   "description": "调用高德地理编码接口，将地址转换为经纬度、adcode 和 citycode。",
   "executor": {
     "type": "api",
-    "endpoint": "https://restapi.amap.com/v3/geocode/geo",
+    "base_url_env": "AMAP_WEB_SERVICE_BASE_URL",
+    "endpoint": "/v3/geocode/geo",
     "method": "GET",
     "auth": {
       "type": "query",
