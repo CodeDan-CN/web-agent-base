@@ -314,7 +314,17 @@ API Skill 必须使用 `base_url_env + endpoint` 组装完整请求地址：
 }
 ```
 
-路径模板参数通过 `path_params` 声明。
+路径模板参数默认按以下顺序读取：
+
+```text
+payload.<字段名>
+request.metadata.<字段名>
+session_context.<字段名>
+```
+
+例如 `/v1/nodes/{node_id}` 会依次尝试读取 `payload.node_id`、`request.metadata.node_id` 和 `session_context.node_id`。
+
+如果默认来源不满足需求，可以通过 `path_params` 显式声明。
 
 如果参数来自 Skill 输入：
 
@@ -370,6 +380,12 @@ backend_envelope
   }
 }
 ```
+
+映射规则：
+
+- `status` 根据 `code` 是否命中成功码判断。
+- `summary` 使用 `msg`。
+- `data` 直接使用 `resp.data`，不做二次改形；对象、数组、标量和 `null` 都保持后端返回形态。
 
 如业务系统字段名不同，可以声明：
 

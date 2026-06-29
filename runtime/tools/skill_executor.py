@@ -151,9 +151,10 @@ class SkillExecutor:
         转换为 ActionResult。
         """
         missing_params = payload.get("missing_params") or []
+        data = payload["data"] if "data" in payload else {}
         return ActionResult(
             status=str(payload.get("status") or ""),
-            data=payload.get("data") or {},
+            data=data,
             summary=str(payload.get("summary") or ""),
             missing_params=[str(item) for item in missing_params],
             error=payload.get("error"),

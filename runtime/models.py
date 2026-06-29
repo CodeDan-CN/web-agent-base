@@ -49,7 +49,7 @@ class ActionResult:
 
     Attributes:
         status (str): 执行状态。
-        data (dict[str, Any]): 执行数据。
+        data (Any): 执行数据。
         summary (str): 摘要。
         answer (str | None): 回答内容。
         question (str | None): 追问内容。
@@ -58,7 +58,7 @@ class ActionResult:
     """
 
     status: str
-    data: dict[str, Any] = field(default_factory=dict)
+    data: Any = field(default_factory=dict)
     summary: str = ""
     answer: str | None = None
     question: str | None = None
@@ -136,7 +136,7 @@ class RuntimeResult:
         state (LoopState): 最终状态。
         answer (str | None): 回答内容。
         question (str | None): 追问内容。
-        data (dict[str, Any]): 完成态结构化结果。
+        data (Any): 完成态结构化结果。
         summary (str): 完成态摘要。
     """
 
@@ -146,5 +146,5 @@ class RuntimeResult:
     state: LoopState
     answer: str | None = None
     question: str | None = None
-    data: dict[str, Any] = field(default_factory=dict)
+    data: Any = field(default_factory=dict)
     summary: str = ""

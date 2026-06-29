@@ -217,10 +217,10 @@ class ApiSkillAdapter(BaseSkillAdapter):
         获取路径模板参数的数据来源。
         """
         if isinstance(path_params, dict):
-            return str(path_params.get(name) or f"payload.{name}")
+            return str(path_params.get(name) or f"auto.{name}")
         if isinstance(path_params, list) and name in path_params:
             return f"payload.{name}"
-        return f"payload.{name}"
+        return f"auto.{name}"
 
     def _inject_body_context_fields(
         self,
@@ -282,6 +282,8 @@ class ApiSkillAdapter(BaseSkillAdapter):
                 return value
             return context.session_context.get(source)
         root, _, path = source.partition(".")
+        if root == "auto":
+            return self._resolve_auto_field(path, payload, context)
         roots = {
             "payload": payload,
             "metadata": context.request.metadata,
@@ -300,6 +302,21 @@ class ApiSkillAdapter(BaseSkillAdapter):
             ),
         }
         return self._dig(roots.get(root, {}), path)
+
+    def _resolve_auto_field(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        context: RuntimeContext,
+    ) -> Any:
+        """
+        按默认顺序读取路径模板参数。
+        """
+        for source in (payload, context.request.metadata, context.session_context):
+            value = self._dig(source, path)
+            if not self._is_missing(value):
+                return value
+        return None
 
     def _dig(self, value: Any, path: str) -> Any:
         """
@@ -325,6 +342,11 @@ class ApiSkillAdapter(BaseSkillAdapter):
         if source.startswith(prefix):
             payload_path = source[len(prefix):]
             return payload_path.split(".", 1)[0]
+        auto_prefix = "auto."
+        if source.startswith(auto_prefix):
+            auto_path = source[len(auto_prefix):]
+            payload_key = auto_path.split(".", 1)[0]
+            return payload_key
         return ""
 
     def _is_missing(self, value: Any) -> bool:
@@ -505,10 +527,7 @@ class ApiSkillAdapter(BaseSkillAdapter):
                 "missing_params": [],
                 "error": error,
             }
-        return self._success(
-            data if isinstance(data, dict) else {"value": data},
-            message or "后端接口调用完成",
-        )
+        return self._success(data, message or "后端接口调用完成")
 
     def _map_amap_route_driving(self, response: dict[str, Any]) -> dict[str, Any]:
         """
@@ -564,7 +583,7 @@ class ApiSkillAdapter(BaseSkillAdapter):
             for item in steps[:8]
         ]
 
-    def _success(self, data: dict[str, Any], summary: str) -> dict[str, Any]:
+    def _success(self, data: Any, summary: str) -> dict[str, Any]:
         """
         构造成功结果。
         """

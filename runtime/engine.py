@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 from uuid import uuid4
 
 from exception.error_code import BizErrorCode
@@ -118,7 +119,7 @@ class RuntimeEngine:
         missing_params: list[str] = []
         final_answer: str | None = None
         final_question: str | None = None
-        final_data: dict | None = None
+        final_data: Any = None
         final_summary = ""
         final_state = current_state
         action_history: list[dict] = []
