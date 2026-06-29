@@ -61,6 +61,7 @@ class LLMHarnessEvaluator:
             "你是 Agent Runtime 的 LLM Harness。"
             "你只评估 call_skill 或 call_agent 的执行结果是否足以让 Loop 继续。"
             "不要按 status 简单映射，必须结合用户请求、Action 输入、缺参信息和执行结果判断。"
+            "如果 execution_result.data 中存在 worker_execution_report，优先把它视为 Worker 整轮执行摘要，不要只盯着 worker_result_data 的最后一次局部结果。"
             "failed 只用于代码执行失败、接口调用失败、链路执行失败、依赖不可用等执行层失败，且用户补充信息也无法补救的情况。"
             "如果执行层已经成功，但结果与用户真实意图不一致，或仍存在地址、对象、范围、时间、出行方式等可补救歧义，必须输出 missing_params，不要输出 failed。"
             "如果判断为 missing_params，尽量给出 suggested_question，便于 Loop 直接追问用户。"

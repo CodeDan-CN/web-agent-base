@@ -320,6 +320,17 @@ class RuntimeEngine:
                 if agui_adapter
                 else None,
             )
+            execution_report = self._build_execution_report(
+                request=request,
+                final_state=final_state,
+                final_answer=final_answer,
+                final_question=final_question,
+                final_summary=final_summary,
+                final_data=final_data,
+                previous_result=previous_result,
+                harness_feedback=harness_feedback,
+                action_history=action_history,
+            )
             return RuntimeResult(
                 request_id=request.request_id,
                 session_id=session_state.session_id,
@@ -329,6 +340,7 @@ class RuntimeEngine:
                 question=final_question,
                 data=final_data or {},
                 summary=final_summary,
+                execution_report=execution_report,
             )
         except Exception as exc:
             failure_answer = build_exception_failure_message(exc)
@@ -381,6 +393,11 @@ class RuntimeEngine:
                 question=None,
                 data={},
                 summary=failure_reason,
+                execution_report=self._build_exception_execution_report(
+                    request=request,
+                    action_history=action_history,
+                    error_reason=failure_reason,
+                ),
             )
 
     def _request_conversation_turn_completed(
@@ -815,3 +832,214 @@ class RuntimeEngine:
             or decision.action_detail.get("name")
             or "unknown_worker"
         )
+
+    def _build_execution_report(
+        self,
+        request: RuntimeRequest,
+        final_state: LoopState,
+        final_answer: str | None,
+        final_question: str | None,
+        final_summary: str,
+        final_data: Any,
+        previous_result: ActionResult | None,
+        harness_feedback: HarnessFeedback | None,
+        action_history: list[dict[str, Any]],
+    ) -> str | None:
+        """
+        为 worker runtime 构建整轮执行汇总文本。
+
+        Args:
+            request (RuntimeRequest): Runtime 请求。
+            final_state (LoopState): 最终状态。
+            final_answer (str | None): 最终回答。
+            final_question (str | None): 最终追问。
+            final_summary (str): 最终摘要。
+            final_data (Any): 最终数据。
+            previous_result (ActionResult | None): 最后一次动作结果。
+            harness_feedback (HarnessFeedback | None): 最后一次 Harness 反馈。
+            action_history (list[dict[str, Any]]): 当前 run 动作历史。
+
+        Returns:
+            str | None: 汇总文本。
+        """
+        if str(request.metadata.get("runtime_role") or "") != "worker":
+            return None
+        task_package = request.metadata.get("worker_task_package")
+        if not isinstance(task_package, dict):
+            return None
+        lines = [
+            "[Worker Task]",
+            f"worker_id: {request.agent_id}",
+            f"task: {str(task_package.get('task') or '').strip() or '未提供'}",
+            f"handoff_context: {str(task_package.get('handoff_context') or '').strip() or '未提供'}",
+            "",
+            "[Loop Summary]",
+        ]
+        if action_history:
+            for item in action_history:
+                lines.append(self._format_action_history_line(item))
+        else:
+            lines.append("no_steps | 当前 worker 未记录可用步骤")
+        final_status = (
+            previous_result.status
+            if previous_result and previous_result.status
+            else final_state.value
+        )
+        final_missing_params = (
+            previous_result.missing_params
+            if previous_result and previous_result.missing_params
+            else []
+        )
+        final_error = (
+            previous_result.error
+            if previous_result and previous_result.error
+            else "none"
+        )
+        answer_or_question = final_question or final_answer or "none"
+        lines.extend(
+            [
+                "",
+                "[Final Result]",
+                f"final_state: {final_state.value}",
+                f"final_status: {final_status}",
+                f"final_summary: {final_summary or (previous_result.summary if previous_result else '') or 'none'}",
+                f"final_missing_params: {final_missing_params}",
+                f"final_error: {final_error}",
+                f"final_question_or_answer: {self._clip_text(str(answer_or_question), 240)}",
+            ]
+        )
+        if harness_feedback:
+            lines.extend(
+                [
+                    "",
+                    "[Final Harness]",
+                    f"state: {harness_feedback.state.value}",
+                    f"status: {harness_feedback.status or 'none'}",
+                    f"summary: {harness_feedback.summary or 'none'}",
+                    f"reason: {harness_feedback.reason or 'none'}",
+                    f"suggested_question: {harness_feedback.suggested_question or 'none'}",
+                ]
+            )
+        if final_data not in (None, {}, []):
+            lines.extend(
+                [
+                    "",
+                    "[Latest Result Snapshot]",
+                    self._clip_text(str(final_data), 800),
+                ]
+            )
+        return "\n".join(lines)
+
+    def _build_exception_execution_report(
+        self,
+        request: RuntimeRequest,
+        action_history: list[dict[str, Any]],
+        error_reason: str,
+    ) -> str | None:
+        """
+        为 worker 异常终止场景构建执行汇总文本。
+
+        Args:
+            request (RuntimeRequest): Runtime 请求。
+            action_history (list[dict[str, Any]]): 当前 run 动作历史。
+            error_reason (str): 异常原因。
+
+        Returns:
+            str | None: 汇总文本。
+        """
+        if str(request.metadata.get("runtime_role") or "") != "worker":
+            return None
+        lines = [
+            "[Worker Task]",
+            f"worker_id: {request.agent_id}",
+            f"task: {str((request.metadata.get('worker_task_package') or {}).get('task') or '').strip() or '未提供'}",
+            "",
+            "[Loop Summary]",
+        ]
+        if action_history:
+            for item in action_history:
+                lines.append(self._format_action_history_line(item))
+        else:
+            lines.append("no_steps | 当前 worker 在异常前没有完成可记录步骤")
+        lines.extend(
+            [
+                "",
+                "[Final Result]",
+                "final_state: failed",
+                "final_status: failed",
+                "final_summary: worker 运行异常终止",
+                "final_missing_params: []",
+                f"final_error: {error_reason or '未知异常'}",
+                "final_question_or_answer: none",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _format_action_history_line(self, item: dict[str, Any]) -> str:
+        """
+        将动作历史项格式化为稳定文本行。
+
+        Args:
+            item (dict[str, Any]): 动作历史项。
+
+        Returns:
+            str: 文本行。
+        """
+        action = str(item.get("action") or "unknown")
+        action_detail = item.get("action_detail") or {}
+        execution_result = item.get("execution_result") or {}
+        state_after = str(item.get("state_after") or "unknown")
+        target = self._action_target_name(action, action_detail)
+        summary = (
+            str(execution_result.get("summary") or execution_result.get("question") or "")
+            or "无摘要"
+        )
+        status = str(execution_result.get("status") or "unknown")
+        error = str(execution_result.get("error") or "").strip() or "none"
+        missing_params = execution_result.get("missing_params") or []
+        return (
+            f"step_{item.get('step_index')} | action={action} | target={target} "
+            f"| status={status} | summary={self._clip_text(summary, 160)} "
+            f"| state_after={state_after} | missing_params={missing_params} | error={self._clip_text(error, 120)}"
+        )
+
+    def _action_target_name(self, action: str, action_detail: dict[str, Any]) -> str:
+        """
+        获取动作目标名称。
+
+        Args:
+            action (str): 动作名称。
+            action_detail (dict[str, Any]): 动作详情。
+
+        Returns:
+            str: 目标名称。
+        """
+        if action == LoopAction.CALL_SKILL.value:
+            return str(
+                action_detail.get("skill_id")
+                or action_detail.get("name")
+                or "unknown_skill"
+            )
+        if action == LoopAction.CALL_AGENT.value:
+            return str(
+                action_detail.get("worker_id")
+                or action_detail.get("name")
+                or "unknown_worker"
+            )
+        return action
+
+    def _clip_text(self, text: str, limit: int) -> str:
+        """
+        截断展示文本。
+
+        Args:
+            text (str): 原始文本。
+            limit (int): 最大长度。
+
+        Returns:
+            str: 截断结果。
+        """
+        normalized = " ".join(text.strip().split())
+        if not normalized:
+            return "none"
+        return normalized if len(normalized) <= limit else f"{normalized[:limit]}..."

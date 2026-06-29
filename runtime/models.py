@@ -138,6 +138,7 @@ class RuntimeResult:
         question (str | None): 追问内容。
         data (Any): 完成态结构化结果。
         summary (str): 完成态摘要。
+        execution_report (str | None): 运行过程汇总文本。
     """
 
     request_id: str
@@ -148,3 +149,4 @@ class RuntimeResult:
     question: str | None = None
     data: Any = field(default_factory=dict)
     summary: str = ""
+    execution_report: str | None = None

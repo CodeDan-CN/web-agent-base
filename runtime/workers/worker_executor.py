@@ -328,6 +328,7 @@ class WorkerExecutor:
             "worker_state": worker_result.state.value,
             "worker_answer": worker_result.answer,
             "worker_question": worker_result.question,
+            "worker_execution_report": worker_result.execution_report,
             "worker_result_data": worker_result.data,
             "worker_result_summary": worker_result.summary,
             "task_package": task_package,
